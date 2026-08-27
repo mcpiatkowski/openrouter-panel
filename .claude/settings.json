@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(./scripts/or-panel.py:*)",
+      "Bash(./scripts/or-fusion.sh:*)",
+      "WebSearch",
+      "WebFetch",
+      "Write(.panel/**)",
+      "Read"
+    ]
+  }
+}
