@@ -1,4 +1,4 @@
-uv run tmp/panel.py \
+uv run mvp/panel.py \
     --role scope \
-    --question-file tmp/willow.md \
+    --question-file mvp/willow.md \
     --image images/small/polnoc_3.jpeg
