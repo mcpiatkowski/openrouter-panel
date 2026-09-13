@@ -8,6 +8,7 @@ import base64
 import json
 import mimetypes
 import os
+import sys
 import time
 from dataclasses import dataclass, field, fields
 from datetime import datetime, timezone
@@ -173,12 +174,16 @@ def resolve_key() -> str:
     raise ValueError("OPENROUTER_API_KEY environment variable is not set.")
 
 
-def fetch_balance(client: httpx.Client) -> float:
-    """Remaining OpenRouter credit in USD."""
-    response = client.get("/credits", timeout=30)
-    response.raise_for_status()
-    data = response.json()["data"]
-    return float(data["total_credits"]) - float(data["total_usage"])
+def fetch_balance(client: httpx.Client) -> float | None:
+    """Remaining OpenRouter credit in USD, or None if the lookup failed."""
+    try:
+        response = client.get("/credits", timeout=30)
+        response.raise_for_status()
+        data = response.json()["data"]
+        return float(data["total_credits"]) - float(data["total_usage"])
+    except httpx.HTTPError as exc:
+        print(f"balance lookup failed: {exc}", file=sys.stderr)
+        return None
 
 
 def fetch_catalog() -> dict:
@@ -280,10 +285,7 @@ if __name__ == "__main__":
 
     with open_client() as client:
         answer = ask(client, OR_MODEL_ID, prompt)
-        try:
-            balance = fetch_balance(client)
-        except httpx.HTTPError:
-            balance = None  # never lose an answer you already paid for
+        balance = fetch_balance(client)
 
     print(summary(answer, balance))
     print(answer.content if answer.usable else "(no answer)")
