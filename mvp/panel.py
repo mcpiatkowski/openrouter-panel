@@ -27,7 +27,7 @@ OR_MODELS: tuple[str, ...] = (
     # "openai/gpt-5.6-terra",
     "z-ai/glm-5.3-flash",
     # "z-ai/glm-5.3",
-    "moonshotai/kimi-k3",
+    # "moonshotai/kimi-k3",
 )
 
 SYSTEM_PROMPTS: dict[str, str] = {
@@ -380,13 +380,16 @@ async def main() -> None:
     if balance is not None:
         print(f"balance  ${balance:.2f}")
 
-    report = Path(".panel") / f"{stamp}.md"
+    topic = Path(".panel") / args.topic
+    name = f"{args.role.upper()}-{stamp}" if args.role else stamp
+
+    report = topic / f"{name}.md"
     report.parent.mkdir(parents=True, exist_ok=True)
     report.write_text(render_panel(answers, prompt.question, stamp), encoding="utf-8")
 
     for answer in answers:
         if answer.raw:
-            path = Path("mvp/archive") / f"{answer.model.replace('/', '-')}-{stamp}.json"
+            path = topic / "raw" / f"{answer.model.replace('/', '-')}-{stamp}.json"
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(json.dumps(answer.raw, indent=2, ensure_ascii=False))
 
@@ -404,6 +407,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     p.add_argument("--refresh", action="store_true", help="Refresh the model cache")
     p.add_argument("-i", "--image", action="append", default=[], type=Path, metavar="PATH")
+    p.add_argument("--topic", required=True, metavar="NAME", help="Directory under .panel/ for this run")
     return p
 
 

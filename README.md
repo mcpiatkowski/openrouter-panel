@@ -24,12 +24,13 @@ Run from the repository root. Output paths are relative to the working directory
 
 ```bash
 # a question on the command line
-uv run mvp/panel.py "Czy przycięcie wierzb na 1.5m ich nie zabije?"
+uv run mvp/panel.py --topic wierzby "Czy przycięcie wierzb na 1.5m ich nie zabije?"
 
 # a question from a file, with a built-in role and two photographs
 uv run mvp/panel.py \
-    --question-file mvp/willow.md \
     --role scope \
+    --topic willow \
+    --question-file mvp/willow.md \
     --image images/small/polnoc_3.jpeg \
     --image images/small/kwiatostan_1.jpeg
 ```
@@ -40,13 +41,15 @@ uv run mvp/panel.py \
 |---|---|
 | `question` | The question, as a positional argument |
 | `-q`, `--question-file FILE` | Read the question from a file instead |
+| `--topic NAME` | **Required.** The directory under `.panel/` this run belongs to |
 | `--role {answer,scope}` | Use a built-in system prompt |
 | `-s`, `--system-prompt TEXT` | Use your own system prompt instead |
 | `-i`, `--image PATH` | Attach an image. Repeat for more than one |
 | `--refresh` | Accepted but does nothing — `fetch_catalog()` is not wired in yet |
 
 A question is required: give either the positional argument or `--question-file`, not
-both. The same applies to `--role` and `--system-prompt`.
+both. The same applies to `--role` and `--system-prompt`. A `--topic` is required too —
+every run belongs to a subject, and naming it is how the reports stay findable.
 
 The two built-in roles:
 
@@ -83,11 +86,27 @@ panel    2/3 answered  $0.0321
 balance  $3.85
 ```
 
-**`.panel/<timestamp>.md`** — the panel report. This is the file you feed to the
-synthesiser.
+Everything a run produces lands under `.panel/<topic>/`, so one subject is one directory
+you can read, copy or delete as a unit:
 
-**`mvp/archive/<model>-<timestamp>.json`** — the raw OpenRouter payload from each model,
-kept so the parser can be tested against real responses.
+```
+.panel/willow/
+├── 20260913T090210Z.md            # no --role, no prefix
+├── ANSWER-20260913T084023Z.md     # --role answer
+├── SCOPE-20260913T081306Z.md      # --role scope
+└── raw/
+    ├── google-gemini-3.8-flash-20260913T090210Z.json
+    └── moonshotai-kimi-k3-20260913T090210Z.json
+```
+
+**`.panel/<topic>/<ROLE>-<timestamp>.md`** — the panel report. This is the file you feed
+to the synthesiser. The role leads, in upper case, so runs of one kind sort together and
+stand out from the bare timestamps of runs made without a `--role`. Within a role, the
+timestamp sorts them by time.
+
+**`.panel/<topic>/raw/<model>-<timestamp>.json`** — the raw OpenRouter payload from each
+model, kept so the parser can be tested against real responses. The timestamp is what ties
+a payload back to its report.
 
 ## Reading the report
 
@@ -142,7 +161,7 @@ way it goes:
 
 ```
 Prompt ──> ask() ──> Response ──┐
-Prompt ──> ask() ──> Response ──┼──> render_panel() ──> .panel/<stamp>.md
+Prompt ──> ask() ──> Response ──┼──> render_panel() ──> .panel/<topic>/<stamp>.md
 Prompt ──> ask() ──> Response ──┘
 ```
 
