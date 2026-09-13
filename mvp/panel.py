@@ -25,7 +25,9 @@ OR_MODELS: tuple[str, ...] = (
     "google/gemini-3.8-flash",
     "openai/gpt-5.6-luna",
     # "openai/gpt-5.6-terra",
-    "z-ai/glm-5.3",
+    "z-ai/glm-5.3-flash",
+    # "z-ai/glm-5.3",
+    "moonshotai/kimi-k3",
 )
 
 SYSTEM_PROMPTS: dict[str, str] = {
