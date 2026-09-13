@@ -355,12 +355,20 @@ def render_panel(answers: list[Response], question: str, stamp: str) -> str:
     return re.sub(r"\n{3,}", "\n\n", page)
 
 
+def read_question(topic: str, override: Path | None) -> str:
+    """The question for a topic. A mistyped --topic stops here, before any model is paid."""
+    path = override or Path("questions") / topic / "question.md"
+    if not path.is_file():
+        raise SystemExit(f"No question at {path}")
+    return path.read_text(encoding="utf-8")
+
+
 async def main() -> None:
     args = build_parser().parse_args()
 
     prompt = Prompt(
-        question=args.question or args.question_file.read_text(encoding="utf-8"),
         system=SYSTEM_PROMPTS.get(args.role) or args.system_prompt or "",
+        question=read_question(args.topic, args.question_file),
         images=tuple(args.image),
     )
 
@@ -397,10 +405,6 @@ async def main() -> None:
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="orpan")
 
-    q_group = p.add_mutually_exclusive_group(required=True)
-    q_group.add_argument("question", nargs="?", help="Question to the panel")
-    q_group.add_argument("-q", "--question-file", type=Path, metavar="FILE")
-
     sys_group = p.add_mutually_exclusive_group()
     sys_group.add_argument("-s", "--system-prompt", help="Custom system prompt.")
     sys_group.add_argument("--role", choices=sorted(SYSTEM_PROMPTS), help="Use built in system prompt")
@@ -408,6 +412,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--refresh", action="store_true", help="Refresh the model cache")
     p.add_argument("-i", "--image", action="append", default=[], type=Path, metavar="PATH")
     p.add_argument("--topic", required=True, metavar="NAME", help="Directory under .panel/ for this run")
+    p.add_argument("-q", "--question-file", type=Path, metavar="FILE", help="Question from this file instead")
     return p
 
 

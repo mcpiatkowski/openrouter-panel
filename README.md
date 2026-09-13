@@ -23,33 +23,47 @@ export OPENROUTER_API_KEY="sk-or-v1-..."
 Run from the repository root. Output paths are relative to the working directory.
 
 ```bash
-# a question on the command line
-uv run mvp/panel.py --topic wierzby "Czy przycięcie wierzb na 1.5m ich nie zabije?"
+# put the question to the panel
+uv run mvp/panel.py --topic willow --role scope
 
-# a question from a file, with a built-in role and two photographs
+# the same, with two photographs
 uv run mvp/panel.py \
     --role scope \
     --topic willow \
-    --question-file mvp/willow.md \
     --image images/small/polnoc_3.jpeg \
     --image images/small/kwiatostan_1.jpeg
 ```
+
+### Topics
+
+A topic is the subject of a panel, and the only name you have to remember. It resolves
+both ends of a run:
+
+```
+questions/willow/question.md   # in — the question, edited between rounds
+questions/willow/scope.sh      # the run itself, kept with its subject
+.panel/willow/                 # out — every report and payload
+```
+
+Because the question is derived rather than named, a mistyped topic fails at once with
+`No question at questions/willlow/question.md`, instead of quietly starting a second
+topic and writing a perfectly good report into it.
 
 ### Options
 
 | Option | Meaning |
 |---|---|
-| `question` | The question, as a positional argument |
-| `-q`, `--question-file FILE` | Read the question from a file instead |
-| `--topic NAME` | **Required.** The directory under `.panel/` this run belongs to |
+| `--topic NAME` | **Required.** The subject: `questions/<topic>/question.md` in, `.panel/<topic>/` out |
+| `-q`, `--question-file FILE` | Read the question from this file instead of the topic's |
 | `--role {answer,scope}` | Use a built-in system prompt |
 | `-s`, `--system-prompt TEXT` | Use your own system prompt instead |
 | `-i`, `--image PATH` | Attach an image. Repeat for more than one |
 | `--refresh` | Accepted but does nothing — `fetch_catalog()` is not wired in yet |
 
-A question is required: give either the positional argument or `--question-file`, not
-both. The same applies to `--role` and `--system-prompt`. A `--topic` is required too —
-every run belongs to a subject, and naming it is how the reports stay findable.
+`--topic` is required: every run belongs to a subject, and the subject is what makes the
+reports findable afterwards. There is no way to pass a question on the command line — a
+question you cannot edit and re-ask is not much use, and re-asking is the whole point.
+`--role` and `--system-prompt` remain mutually exclusive.
 
 The two built-in roles:
 
