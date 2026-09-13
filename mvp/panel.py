@@ -49,32 +49,38 @@ SYSTEM_PROMPTS: dict[str, str] = {
     ),
 }
 
-REPORT = """\
+PANEL = """\
 # {title}
 
-_{stamp} · `{model}` via {provider} · {seconds:.0f}s · ${cost:.4f} · {tokens}_
+_{stamp} · {answered}/{count} answered · ${cost:.4f}_
 
-{note}
+{table}
+
+Each answer below was produced independently, with no knowledge of the others.
+
+<question>
+
+{question}
+
+</question>
+
+{panelists}
+"""
+
+PANELIST = """\
+<panelist model="{model}" status="{status}">
 
 {body}
-
 {reasoning}
-"""
+</panelist>"""
 
-FAILED = """\
-# {title}
-
-_{stamp} · `{model}` · failed after {seconds:.0f}s_
-
-> **Failed.** {error}
-"""
-
-REASONING = """\
+REASONING = """
 <details><summary>Reasoning · {tokens} tokens</summary>
 
 {text}
 
-</details>"""
+</details>
+"""
 
 
 def image_data_url(path: Path) -> str:
@@ -295,34 +301,56 @@ async def ask(client: httpx.AsyncClient, model_id: str, prompt: Prompt) -> Respo
         return Response(model=model_id, error=f"Unparseable payload: {exc!r}", seconds=seconds, raw=payload)
 
 
-def render(answer: Response, title: str, stamp: str) -> str:
+def status(answer: Response) -> str:
+    """One word the synthesizer can branch on."""
     if not answer.ok:
-        return FAILED.format(title=title, stamp=stamp, model=answer.model, seconds=answer.seconds, error=answer.error)
-
-    u = answer.usage
+        return "failed"
     if not answer.usable:
-        note = (
+        return "no-answer"
+    if answer.truncated:
+        return "truncated"
+    return "answered"
+
+
+def render_panelist(answer: Response) -> str:
+    u = answer.usage
+    if not answer.ok:
+        body = f"> **Failed.** {answer.error}"
+    elif not answer.usable:
+        body = (
             f"> **No answer.** {u.completion_tokens} completion tokens "
             f"({u.reasoning_tokens} reasoning), none of them content."
         )
     elif answer.truncated:
-        note = "> **Truncated** at the model's output ceiling."
+        body = f"> **Truncated** at the model's output ceiling.\n\n{answer.content}"
     else:
-        note = ""
+        body = answer.content
 
-    page = REPORT.format(
-        title=title,
-        stamp=stamp,
+    show_reasoning = answer.reasoning and not answer.usable
+    return PANELIST.format(
         model=answer.model,
-        provider=answer.provider,
-        seconds=answer.seconds,
-        cost=u.cost,
-        tokens=f"{u.prompt_tokens} in / {u.completion_tokens} out ({u.reasoning_tokens} reasoning)",
-        note=note,
-        body=answer.content,
-        reasoning=REASONING.format(tokens=u.reasoning_tokens, text=answer.reasoning) if answer.reasoning else "",
+        status=status(answer),
+        body=body,
+        reasoning=REASONING.format(tokens=u.reasoning_tokens, text=answer.reasoning) if show_reasoning else "",
     )
-    return re.sub(r"\n{3,}", "\n\n", page)  # collapse holes left by empty slots
+
+
+def render_panel(answers: list[Response], question: str, stamp: str) -> str:
+    question = question.strip()
+    total = sum((answer.usage for answer in answers), Usage())
+    rows = "\n".join(f"| `{a.model}` | {status(a)} | ${a.usage.cost:.4f} | {a.seconds:.0f}s |" for a in answers)
+
+    page = PANEL.format(
+        title=question.splitlines()[0],
+        stamp=stamp,
+        answered=sum(1 for answer in answers if answer.usable),
+        count=len(answers),
+        cost=total.cost,
+        table=f"| model | status | cost | time |\n|---|---|---|---|\n{rows}",
+        question=question,
+        panelists="\n\n".join(render_panelist(answer) for answer in answers),
+    )
+    return re.sub(r"\n{3,}", "\n\n", page)
 
 
 async def main() -> None:
@@ -352,8 +380,7 @@ async def main() -> None:
 
     report = Path(".panel") / f"{stamp}.md"
     report.parent.mkdir(parents=True, exist_ok=True)
-    title = prompt.question.strip().splitlines()[0]
-    report.write_text("\n---\n\n".join(render(a, title, stamp) for a in answers), encoding="utf-8")
+    report.write_text(render_panel(answers, prompt.question, stamp), encoding="utf-8")
 
     for answer in answers:
         if answer.raw:
