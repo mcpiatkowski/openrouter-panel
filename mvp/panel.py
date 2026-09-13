@@ -4,6 +4,7 @@
 # dependencies = ["httpx>=0.27"]
 # ///
 import argparse
+import asyncio
 import base64
 import json
 import mimetypes
@@ -20,7 +21,12 @@ import httpx
 
 TIMEOUT: float = 400.0
 OR_API: str = "https://openrouter.ai/api/v1"
-OR_MODEL_ID: str = "google/gemini-3.8-flash"
+OR_MODELS: tuple[str, ...] = (
+    "google/gemini-3.8-flash",
+    "openai/gpt-5.6-luna",
+    # "openai/gpt-5.6-terra",
+    "z-ai/glm-5.3",
+)
 
 SYSTEM_PROMPTS: dict[str, str] = {
     "scope": (
@@ -202,10 +208,10 @@ def resolve_key() -> str:
     raise ValueError("OPENROUTER_API_KEY environment variable is not set.")
 
 
-def fetch_balance(client: httpx.Client) -> float | None:
+async def fetch_balance(client: httpx.AsyncClient) -> float | None:
     """Remaining OpenRouter credit in USD, or None if the lookup failed."""
     try:
-        response = client.get("/credits", timeout=30)
+        response = await client.get("/credits", timeout=30)
         response.raise_for_status()
         data = response.json()["data"]
         return float(data["total_credits"]) - float(data["total_usage"])
@@ -231,9 +237,9 @@ def fetch_catalog() -> dict:
     return json.loads(cache.read_text())
 
 
-def open_client() -> httpx.Client:
-    """One client per run: the key is resolved once and the config lives in one place."""
-    return httpx.Client(
+def open_client() -> httpx.AsyncClient:
+    """One client for the whole panel. The key is resolved once, connections are shared."""
+    return httpx.AsyncClient(
         headers={"Authorization": f"Bearer {resolve_key()}", "X-Title": "orpan-dev"},
         base_url=OR_API,
         timeout=TIMEOUT,
@@ -262,16 +268,15 @@ def summary(answer: Response, balance: float | None = None) -> str:
     return "\n".join(lines)
 
 
-def ask(client: httpx.Client, model_id: str, prompt: Prompt) -> Response:
+async def ask(client: httpx.AsyncClient, model_id: str, prompt: Prompt) -> Response:
     """Ask one model. Every outcome comes back as a Response."""
     started = time.monotonic()
     try:
-        response = client.post(
+        response = await client.post(
             "/chat/completions",
             json={"model": model_id, "messages": prompt.to_messages(), "usage": {"include": True}},
         )
     except httpx.TimeoutException:
-        # str(exc) is empty on timeouts, so say it ourselves.
         return Response(model=model_id, error=f"Timed out after {TIMEOUT:.0f}s", seconds=time.monotonic() - started)
     except httpx.HTTPError as exc:
         return Response(model=model_id, error=f"{type(exc).__name__}: {exc}", seconds=time.monotonic() - started)
@@ -283,7 +288,11 @@ def ask(client: httpx.Client, model_id: str, prompt: Prompt) -> Response:
     except json.JSONDecodeError:
         return Response(model=model_id, error=f"HTTP {response.status_code}: non JSON body", seconds=seconds)
 
-    return Response.from_payload(model_id, payload, seconds)
+    try:
+        return Response.from_payload(model_id, payload, seconds)
+    except Exception as exc:
+        # One model's surprise must not cost the others their answers.
+        return Response(model=model_id, error=f"Unparseable payload: {exc!r}", seconds=seconds, raw=payload)
 
 
 def render(answer: Response, title: str, stamp: str) -> str:
@@ -316,6 +325,43 @@ def render(answer: Response, title: str, stamp: str) -> str:
     return re.sub(r"\n{3,}", "\n\n", page)  # collapse holes left by empty slots
 
 
+async def main() -> None:
+    args = build_parser().parse_args()
+
+    prompt = Prompt(
+        question=args.question or args.question_file.read_text(encoding="utf-8"),
+        system=SYSTEM_PROMPTS.get(args.role) or args.system_prompt or "",
+        images=tuple(args.image),
+    )
+
+    print(f"asking {len(OR_MODELS)} models…", file=sys.stderr)
+
+    async with open_client() as client:
+        answers = await asyncio.gather(*(ask(client, model, prompt) for model in OR_MODELS))
+        balance = await fetch_balance(client)
+
+    total = sum((answer.usage for answer in answers), Usage())
+    answered = sum(1 for answer in answers if answer.usable)
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+
+    for answer in answers:
+        print(summary(answer))
+    print(f"\npanel    {answered}/{len(answers)} answered  ${total.cost:.4f}")
+    if balance is not None:
+        print(f"balance  ${balance:.2f}")
+
+    report = Path(".panel") / f"{stamp}.md"
+    report.parent.mkdir(parents=True, exist_ok=True)
+    title = prompt.question.strip().splitlines()[0]
+    report.write_text("\n---\n\n".join(render(a, title, stamp) for a in answers), encoding="utf-8")
+
+    for answer in answers:
+        if answer.raw:
+            path = Path("mvp/archive") / f"{answer.model.replace('/', '-')}-{stamp}.json"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps(answer.raw, indent=2, ensure_ascii=False))
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="orpan")
 
@@ -333,29 +379,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 if __name__ == "__main__":
-    args = build_parser().parse_args()
-
-    prompt = Prompt(
-        question=args.question or args.question_file.read_text(encoding="utf-8"),
-        system=SYSTEM_PROMPTS.get(args.role) or args.system_prompt or "",
-        images=tuple(args.image),
-    )
-
-    with open_client() as client:
-        answer = ask(client, OR_MODEL_ID, prompt)
-        balance = fetch_balance(client)
-
-    print(summary(answer, balance))
-    print(answer.content if answer.usable else "(no answer)")
-
-    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-
-    report = Path(".panel") / f"{stamp}.md"
-    report.parent.mkdir(parents=True, exist_ok=True)
-    report.write_text(render(answer, title=prompt.question.strip().splitlines()[0], stamp=stamp), encoding="utf-8")
-
-    name = f"{answer.model.replace('/', '-')}-{stamp}.json"
-    archive = Path("mvp/archive") / name
-    archive.parent.mkdir(parents=True, exist_ok=True)
-    if answer.raw:
-        archive.write_text(json.dumps(answer.raw, indent=2, ensure_ascii=False))
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        raise SystemExit(130) from None
