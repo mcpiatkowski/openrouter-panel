@@ -1,3 +1,5 @@
+Wierzby Glowiaste
+
 Na zdjęciach widoczne są wielopienne wierzby. Po stronie północnej drzewa wyrastają z karp i wszystkie drzewa są wielopienne.
 
 Zdjęcie ze wschodu przedstawia starą zaniedbaną głowę.

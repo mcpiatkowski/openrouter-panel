@@ -8,6 +8,7 @@ import base64
 import json
 import mimetypes
 import os
+import re
 import sys
 import time
 from dataclasses import dataclass, field, fields
@@ -41,6 +42,33 @@ SYSTEM_PROMPTS: dict[str, str] = {
         "Do not hedge to cover both possibilities."
     ),
 }
+
+REPORT = """\
+# {title}
+
+_{stamp} · `{model}` via {provider} · {seconds:.0f}s · ${cost:.4f} · {tokens}_
+
+{note}
+
+{body}
+
+{reasoning}
+"""
+
+FAILED = """\
+# {title}
+
+_{stamp} · `{model}` · failed after {seconds:.0f}s_
+
+> **Failed.** {error}
+"""
+
+REASONING = """\
+<details><summary>Reasoning · {tokens} tokens</summary>
+
+{text}
+
+</details>"""
 
 
 def image_data_url(path: Path) -> str:
@@ -230,7 +258,7 @@ def summary(answer: Response, balance: float | None = None) -> str:
     elif answer.truncated:
         lines.append("  ! truncated at the model's output ceiling")
     if balance is not None:
-        lines.append(f"  balance  ${balance:.2f}")
+        lines.append(f"  balance  ${balance:.2f}\n")
     return "\n".join(lines)
 
 
@@ -256,6 +284,36 @@ def ask(client: httpx.Client, model_id: str, prompt: Prompt) -> Response:
         return Response(model=model_id, error=f"HTTP {response.status_code}: non JSON body", seconds=seconds)
 
     return Response.from_payload(model_id, payload, seconds)
+
+
+def render(answer: Response, title: str, stamp: str) -> str:
+    if not answer.ok:
+        return FAILED.format(title=title, stamp=stamp, model=answer.model, seconds=answer.seconds, error=answer.error)
+
+    u = answer.usage
+    if not answer.usable:
+        note = (
+            f"> **No answer.** {u.completion_tokens} completion tokens "
+            f"({u.reasoning_tokens} reasoning), none of them content."
+        )
+    elif answer.truncated:
+        note = "> **Truncated** at the model's output ceiling."
+    else:
+        note = ""
+
+    page = REPORT.format(
+        title=title,
+        stamp=stamp,
+        model=answer.model,
+        provider=answer.provider,
+        seconds=answer.seconds,
+        cost=u.cost,
+        tokens=f"{u.prompt_tokens} in / {u.completion_tokens} out ({u.reasoning_tokens} reasoning)",
+        note=note,
+        body=answer.content,
+        reasoning=REASONING.format(tokens=u.reasoning_tokens, text=answer.reasoning) if answer.reasoning else "",
+    )
+    return re.sub(r"\n{3,}", "\n\n", page)  # collapse holes left by empty slots
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -291,7 +349,13 @@ if __name__ == "__main__":
     print(answer.content if answer.usable else "(no answer)")
 
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    archive = Path("mvp/gemini-response") / f"response-{stamp}.json"
+
+    report = Path(".panel") / f"{stamp}.md"
+    report.parent.mkdir(parents=True, exist_ok=True)
+    report.write_text(render(answer, title=prompt.question.strip().splitlines()[0], stamp=stamp), encoding="utf-8")
+
+    name = f"{answer.model.replace('/', '-')}-{stamp}.json"
+    archive = Path("mvp/archive") / name
     archive.parent.mkdir(parents=True, exist_ok=True)
     if answer.raw:
         archive.write_text(json.dumps(answer.raw, indent=2, ensure_ascii=False))
