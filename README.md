@@ -55,6 +55,7 @@ topic and writing a perfectly good report into it.
 |---|---|
 | `--topic NAME` | **Required.** The subject: `questions/<topic>/question.md` in, `.panel/<topic>/` out |
 | `-q`, `--question-file FILE` | Read the question from this file instead of the topic's |
+| `-p`, `--preset {cheap,quality}` | Which panel to ask. Default `cheap` |
 | `--role {answer,scope}` | Use a built-in system prompt |
 | `-s`, `--system-prompt TEXT` | Use your own system prompt instead |
 | `-i`, `--image PATH` | Attach an image. Repeat for more than one |
@@ -74,18 +75,21 @@ The two built-in roles:
 
 ### Choosing the panel
 
-Edit `OR_MODELS` near the top of `mvp/panel.py`:
+Two panels, in `PRESETS` near the top of `mvp/panel.py`:
 
 ```python
-OR_MODELS: tuple[str, ...] = (
-    "google/gemini-3.8-flash",
-    "openai/gpt-5.6-luna",
-    "z-ai/glm-5.3",
-)
+PRESETS: dict[str, tuple[str, ...]] = {
+    "cheap": ("google/gemini-3.8-flash", "openai/gpt-5.6-luna", "z-ai/glm-5.3-flash"),
+    "quality": ("anthropic/claude-sonnet-5", "google/gemini-3.7-flash", …),
+}
 ```
 
-All models are asked concurrently, so the run takes as long as the slowest one rather
-than the sum. Model IDs come from https://openrouter.ai/models.
+`cheap` is the default, and it is the one to iterate a question against: a scope round
+costs a few cents, so re-asking after every edit is affordable. Move to `-p quality` once
+the question has stopped changing — for the last scope round and for the answer.
+
+All models are asked concurrently, so a run takes as long as the slowest one rather than
+the sum. Model IDs come from https://openrouter.ai/models.
 
 ## What you get
 

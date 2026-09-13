@@ -21,14 +21,26 @@ import httpx
 
 TIMEOUT: float = 400.0
 OR_API: str = "https://openrouter.ai/api/v1"
-OR_MODELS: tuple[str, ...] = (
-    "google/gemini-3.8-flash",
-    "openai/gpt-5.6-luna",
-    # "openai/gpt-5.6-terra",
-    "z-ai/glm-5.3-flash",
-    # "z-ai/glm-5.3",
-    # "moonshotai/kimi-k3",
-)
+
+PRESETS: dict[str, tuple[str, ...]] = {
+    "cheap": (
+        "google/gemini-3.8-flash",
+        "openai/gpt-5.6-luna",
+        "z-ai/glm-5.3-flash",
+    ),
+    "balanced": (
+        "anthropic/claude-sonnet-5",
+        "google/gemini-3.8-flash",
+        "openai/gpt-5.6-terra",
+    ),
+    "quality": (
+        "anthropic/claude-opus-5",
+        "google/gemini-3.8-flash",
+        "moonshotai/kimi-k3",
+        "openai/gpt-5.6-sol",
+        "x-ai/grok-4.6",
+    ),
+}
 
 SYSTEM_PROMPTS: dict[str, str] = {
     "scope": (
@@ -372,10 +384,11 @@ async def main() -> None:
         images=tuple(args.image),
     )
 
-    print(f"asking {len(OR_MODELS)} models…", file=sys.stderr)
+    models = PRESETS[args.preset]
+    print(f"asking {len(models)} models ({args.preset})…", file=sys.stderr)
 
     async with open_client() as client:
-        answers = await asyncio.gather(*(ask(client, model, prompt) for model in OR_MODELS))
+        answers = await asyncio.gather(*(ask(client, model, prompt) for model in models))
         balance = await fetch_balance(client)
 
     total = sum((answer.usage for answer in answers), Usage())
@@ -411,8 +424,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     p.add_argument("--refresh", action="store_true", help="Refresh the model cache")
     p.add_argument("-i", "--image", action="append", default=[], type=Path, metavar="PATH")
-    p.add_argument("--topic", required=True, metavar="NAME", help="Directory under .panel/ for this run")
+    p.add_argument("-p", "--preset", choices=sorted(PRESETS), default="cheap", help="Which panel to ask")
     p.add_argument("-q", "--question-file", type=Path, metavar="FILE", help="Question from this file instead")
+    p.add_argument("--topic", required=True, metavar="NAME", help="Subject: questions/<topic>/ in, .panel/<topic>/ out")
     return p
 
 
