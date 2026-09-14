@@ -1,4 +1,4 @@
-uv run mvp/panel.py \
+uv run src/panel.py \
     --role answer \
     --topic willow \
     --question-file questions/willow/briefing.md \

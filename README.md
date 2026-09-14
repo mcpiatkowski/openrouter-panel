@@ -1,4 +1,6 @@
-# orpan — an OpenRouter panel
+# Orpan
+
+## OpenRouter Panel
 
 Ask several models the same question at once. Each answers independently, with no
 knowledge of the others. The tool collects the answers into one markdown file; a separate
