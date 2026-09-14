@@ -172,6 +172,15 @@ runs found 9 of 30 responses came back with no content at all, at a cost of abou
 out of $2.70 — roughly a quarter of everything spent. Leaving `max_tokens` unset lets each
 model run to its own ceiling, and `status="no-answer"` reports it when that still is not enough.
 
+**No time limit on an answer.** `TIMEOUT` looks like one, but it is not: it is how long
+the tool waits for the *next piece of data*, and every piece that arrives starts the count
+again. A model that keeps sending can run far longer than 400 seconds —
+`z-ai/glm-5.3-flash` took 459s on an answer round and returned a complete answer for
+$0.0159. That is on purpose. A real time limit would cut a model off after it had already
+spent most of its money thinking, and bill you in full for nothing, which is the same
+mistake as `max_tokens` above. A connection that goes properly quiet still fails after 400
+seconds, which is the case worth failing on.
+
 ## How it works
 
 One request per model, all in flight at once, each turning into a `Response` whichever

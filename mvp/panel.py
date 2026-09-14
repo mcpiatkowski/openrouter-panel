@@ -19,6 +19,8 @@ from pathlib import Path
 
 import httpx
 
+# How long to wait for the next piece of data, not for the whole answer. Each piece
+# that arrives starts the count again, so a slow model can take much longer than this.
 TIMEOUT: float = 400.0
 OR_API: str = "https://openrouter.ai/api/v1"
 
@@ -297,7 +299,7 @@ async def ask(client: httpx.AsyncClient, model_id: str, prompt: Prompt) -> Respo
             json={"model": model_id, "messages": prompt.to_messages(), "usage": {"include": True}},
         )
     except httpx.TimeoutException:
-        return Response(model=model_id, error=f"Timed out after {TIMEOUT:.0f}s", seconds=time.monotonic() - started)
+        return Response(model=model_id, error=f"Nothing received for {TIMEOUT:.0f}s", seconds=time.monotonic() - started)
     except httpx.HTTPError as exc:
         return Response(model=model_id, error=f"{type(exc).__name__}: {exc}", seconds=time.monotonic() - started)
 

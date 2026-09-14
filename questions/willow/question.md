@@ -11,3 +11,8 @@ Chciałbym uformować drzewa po stronie północnej do formy głowiastej. Zastan
 Siatka płotu nie wrasta w żadne z drzew.
 
 Zrób proszę analizę wykonalności zabiegów cięcia i uformowania głowy wierzb wychodząc z formy wielo-piennej.
+
+
+Poprzedni właściciel co kilka lat ścinał wszystkie wierzby do samej karpy. 
+
+Przy przycinaniu chcę zostawić dwie/trzy konary z karpy aby zostało trochę zielonej masy i żeby nie ścinać całej korony.
