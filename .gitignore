@@ -1,0 +1,8 @@
+.venv/
+.panel/
+images/
+__pycache__
+tmp/
+archive/
+gemini-response/
+.DS_Store
