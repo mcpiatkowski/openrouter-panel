@@ -20,26 +20,61 @@ meaningful when none of them saw the others' work.
 export OPENROUTER_API_KEY="sk-or-v1-..."
 ```
 
+## Install
+
+```bash
+./install.sh
+orpan -h
+```
+
+The script does two things. It links `src/panel.py` into `~/.local/bin` as `orpan`, so an
+edit to the script applies at once. It copies the two skills into `~/.claude/skills`, where
+Claude Code finds them.
+
+The skills are copied, not linked. A sandbox mounts only its own workspace directory, so a
+symlink pointing into this repository is dangling inside it. Run `./install.sh` again after
+you edit a skill, and start a new sandbox to pick the copy up.
+
+If `orpan` is not found, check three things: that `~/.local/bin` is on your `PATH`, that
+`ls -l ~/.local/bin/orpan` shows an absolute target, and - in zsh, which caches command
+locations - that you ran `rehash` or opened a new terminal.
+
 ## Usage
 
-Run from the repository root. Output paths are relative to the working directory.
+Run from a workspace: any directory that holds a `questions/` folder. Every path is
+relative to the working directory, and nothing is read from this repository.
 
 ```bash
 # put the question to the panel
-uv run mvp/panel.py --topic willow --role scope
+orpan --topic willow --role scope
 
 # the same, with two photographs
-uv run mvp/panel.py \
+orpan \
     --role scope \
     --topic willow \
     --image images/small/polnoc_3.jpeg \
     --image images/small/kwiatostan_1.jpeg
 ```
 
+### Workspaces
+
+A workspace is any directory with a `questions/` folder in it. The tool is installed once
+and run from whichever workspace the question belongs to:
+
+```
+~/Notes/health/   questions/hamstring/…  images/hamstring/…  .panel/hamstring/…
+~/Notes/garden/   questions/willow/…     images/willow/…     .panel/willow/…
+```
+
+Keep the questions out of this repository. This one is public, and a question can hold
+anything - medical notes, private measurements, photographs. A workspace is its own git
+repository, private when its subject is private. It is also the unit a sandbox mounts, so
+one workspace is one sandbox, with its own memory and nothing from the others in it.
+
 ### Topics
 
 A topic is the subject of a panel, and the only name you have to remember. It resolves
-both ends of a run:
+both ends of a run, inside the workspace you are in:
 
 ```
 questions/willow/question.md   # in — the question, edited between rounds
@@ -57,7 +92,7 @@ topic and writing a perfectly good report into it.
 |---|---|
 | `--topic NAME` | **Required.** The subject: `questions/<topic>/question.md` in, `.panel/<topic>/` out |
 | `-q`, `--question-file FILE` | Read the question from this file instead of the topic's |
-| `-p`, `--preset {cheap,quality}` | Which panel to ask. Default `cheap` |
+| `-p`, `--preset {cheap,balanced,quality}` | Which panel to ask. Default `cheap` |
 | `--role {answer,scope}` | Use a built-in system prompt |
 | `-s`, `--system-prompt TEXT` | Use your own system prompt instead |
 | `-i`, `--image PATH` | Attach an image. Repeat for more than one |
@@ -77,12 +112,13 @@ The two built-in roles:
 
 ### Choosing the panel
 
-Two panels, in `PRESETS` near the top of `mvp/panel.py`:
+Three panels, in `PRESETS` near the top of `src/panel.py`:
 
 ```python
 PRESETS: dict[str, tuple[str, ...]] = {
     "cheap": ("google/gemini-3.8-flash", "openai/gpt-5.6-luna", "z-ai/glm-5.3-flash"),
-    "quality": ("anthropic/claude-sonnet-5", "google/gemini-3.7-flash", …),
+    "balanced": ("anthropic/claude-sonnet-5", "google/gemini-3.8-flash", …),
+    "quality": ("anthropic/claude-opus-5", "google/gemini-3.8-flash", …),
 }
 ```
 
@@ -158,6 +194,21 @@ third again to the length of every answer.
 ## Deliberate omissions
 
 These are choices, not gaps. Please do not "fix" them without reading this section.
+
+**No `pyproject.toml`, and no `uv tool install`.** The script declares its dependencies
+inline, in the PEP 723 block at the top. A package file would be a second place to declare
+the same thing. A packaged install is only needed on a machine that does not have this
+checkout; for one Mac with one checkout, a symlink does the whole job and an edit to
+`src/panel.py` takes effect without reinstalling. Revisit this if `orpan` ever has to run
+inside a sandbox, because a sandbox mounts only its own workspace and cannot see this
+repository.
+
+**The skills are copied into `~/.claude/skills`, not linked.** Measured: the host directory
+is passed into a sandbox with its symlinks unresolved, so a link into this repository is
+dangling there — `.venv/bin/python` behaves the same way. The cost is two copies of each
+skill and the need to run `./install.sh` again after editing one. The alternative, keeping
+the skills only in `~/.claude/skills`, would leave the pipeline unversioned and separated
+from the report format it depends on.
 
 **No cost estimate before the run.** How much a model will spend on reasoning cannot be
 known before it reasons, and image tokens vary by provider. An earlier version estimated

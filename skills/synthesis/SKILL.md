@@ -1,4 +1,5 @@
 ---
+name: synthesis
 description: Read an answer round and write the analysis — your conclusion, where the panel split, and what the next round needs
 argument-hint: <topic> [answer-report]
 allowed-tools: Read, Write, Glob, Grep

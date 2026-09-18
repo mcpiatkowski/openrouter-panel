@@ -1,4 +1,5 @@
 ---
+name: briefing
 description: Research the evidence a scope round asked for and write the briefing the answer panel reasons over
 argument-hint: <topic> [scope-report]
 allowed-tools: Read, Write, Glob, Grep, WebSearch, WebFetch
