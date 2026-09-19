@@ -5,13 +5,13 @@ argument-hint: <topic> [scope-report]
 allowed-tools: Read, Write, Glob, Grep, WebSearch, WebFetch
 ---
 
-Topic: **$1** · Scope report: **$2** — when empty, the newest `SCOPE-*.md` in `.panel/$1/`.
+Topic: **$1** · Scope report: **$2** — when empty, the newest `SCOPE-*.md` in `.orpan/$1/`.
 
 The panel has already said what it would need to know. Your job is to go and find it,
 and leave behind one file the answer round reasons over:
 
 ```
-.panel/$1/SCOPE-<stamp>.md  →  research  →  questions/$1/briefing.md
+.orpan/$1/SCOPE-<stamp>.md  →  research  →  questions/$1/briefing.md
 ```
 
 You are not summarising the scope report, you are satisfying it. A briefing that hands

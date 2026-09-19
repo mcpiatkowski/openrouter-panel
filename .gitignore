@@ -1,5 +1,5 @@
 .venv/
-.panel/
+.orpan/
 images/
 __pycache__
 tmp/

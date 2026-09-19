@@ -262,7 +262,7 @@ def fetch_catalog() -> dict:
 def open_client() -> httpx.AsyncClient:
     """One client for the whole panel. The key is resolved once, connections are shared."""
     return httpx.AsyncClient(
-        headers={"Authorization": f"Bearer {resolve_key()}", "X-Title": "orpan-dev"},
+        headers={"Authorization": f"Bearer {resolve_key()}", "X-Title": "orpan"},
         base_url=OR_API,
         timeout=TIMEOUT,
     )
@@ -403,7 +403,7 @@ async def main() -> None:
     if balance is not None:
         print(f"balance  ${balance:.2f}")
 
-    topic = Path(".panel") / args.topic
+    topic = Path(".orpan") / args.topic
     name = f"{args.role.upper()}-{stamp}" if args.role else stamp
 
     report = topic / f"{name}.md"
@@ -428,7 +428,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("-i", "--image", action="append", default=[], type=Path, metavar="PATH")
     p.add_argument("-p", "--preset", choices=sorted(PRESETS), default="cheap", help="Which panel to ask")
     p.add_argument("-q", "--question-file", type=Path, metavar="FILE", help="Question from this file instead")
-    p.add_argument("--topic", required=True, metavar="NAME", help="Subject: questions/<topic>/ in, .panel/<topic>/ out")
+    p.add_argument("--topic", required=True, metavar="NAME", help="Subject: questions/<topic>/ in, .orpan/<topic>/ out")
     return p
 
 

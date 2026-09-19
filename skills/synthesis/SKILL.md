@@ -5,14 +5,14 @@ argument-hint: <topic> [answer-report]
 allowed-tools: Read, Write, Glob, Grep
 ---
 
-Topic: **$1** · Answer report: **$2** — when empty, the newest `ANSWER-*.md` in `.panel/$1/`.
+Topic: **$1** · Answer report: **$2** — when empty, the newest `ANSWER-*.md` in `.orpan/$1/`.
 
 The panel has answered. Every panelist read the same briefing and none of them saw
 another's reply, so where they diverge, the divergence is judgment — not a difference in
 what each happened to find. That is what this pipeline buys, and reading it is your job:
 
 ```
-.panel/$1/ANSWER-<stamp>.md  →  your analysis  →  questions/$1/synthesis.md
+.orpan/$1/ANSWER-<stamp>.md  →  your analysis  →  questions/$1/synthesis.md
 ```
 
 You are the analyst, not a summariser. Their answers are evidence about the question; the

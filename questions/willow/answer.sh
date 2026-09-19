@@ -1,4 +1,4 @@
-uv run src/panel.py \
+orpan \
     --role answer \
     --topic willow \
     --question-file questions/willow/briefing.md \

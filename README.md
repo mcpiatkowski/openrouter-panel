@@ -27,7 +27,7 @@ export OPENROUTER_API_KEY="sk-or-v1-..."
 orpan -h
 ```
 
-The script does two things. It links `src/panel.py` into `~/.local/bin` as `orpan`, so an
+The script does two things. It links `src/orpan.py` into `~/.local/bin` as `orpan`, so an
 edit to the script applies at once. It copies the two skills into `~/.claude/skills`, where
 Claude Code finds them.
 
@@ -62,8 +62,8 @@ A workspace is any directory with a `questions/` folder in it. The tool is insta
 and run from whichever workspace the question belongs to:
 
 ```
-~/Notes/health/   questions/hamstring/…  images/hamstring/…  .panel/hamstring/…
-~/Notes/garden/   questions/willow/…     images/willow/…     .panel/willow/…
+~/Notes/health/   questions/hamstring/…  images/hamstring/…  .orpan/hamstring/…
+~/Notes/garden/   questions/willow/…     images/willow/…     .orpan/willow/…
 ```
 
 Keep the questions out of this repository. This one is public, and a question can hold
@@ -79,7 +79,7 @@ both ends of a run, inside the workspace you are in:
 ```
 questions/willow/question.md   # in — the question, edited between rounds
 questions/willow/scope.sh      # the run itself, kept with its subject
-.panel/willow/                 # out — every report and payload
+.orpan/willow/                 # out — every report and payload
 ```
 
 Because the question is derived rather than named, a mistyped topic fails at once with
@@ -90,7 +90,7 @@ topic and writing a perfectly good report into it.
 
 | Option | Meaning |
 |---|---|
-| `--topic NAME` | **Required.** The subject: `questions/<topic>/question.md` in, `.panel/<topic>/` out |
+| `--topic NAME` | **Required.** The subject: `questions/<topic>/question.md` in, `.orpan/<topic>/` out |
 | `-q`, `--question-file FILE` | Read the question from this file instead of the topic's |
 | `-p`, `--preset {cheap,balanced,quality}` | Which panel to ask. Default `cheap` |
 | `--role {answer,scope}` | Use a built-in system prompt |
@@ -112,7 +112,7 @@ The two built-in roles:
 
 ### Choosing the panel
 
-Three panels, in `PRESETS` near the top of `src/panel.py`:
+Three panels, in `PRESETS` near the top of `src/orpan.py`:
 
 ```python
 PRESETS: dict[str, tuple[str, ...]] = {
@@ -142,11 +142,11 @@ panel    2/3 answered  $0.0321
 balance  $3.85
 ```
 
-Everything a run produces lands under `.panel/<topic>/`, so one subject is one directory
+Everything a run produces lands under `.orpan/<topic>/`, so one subject is one directory
 you can read, copy or delete as a unit:
 
 ```
-.panel/willow/
+.orpan/willow/
 ├── 20260913T090210Z.md            # no --role, no prefix
 ├── ANSWER-20260913T084023Z.md     # --role answer
 ├── SCOPE-20260913T081306Z.md      # --role scope
@@ -155,12 +155,12 @@ you can read, copy or delete as a unit:
     └── moonshotai-kimi-k3-20260913T090210Z.json
 ```
 
-**`.panel/<topic>/<ROLE>-<timestamp>.md`** — the panel report. This is the file you feed
+**`.orpan/<topic>/<ROLE>-<timestamp>.md`** — the panel report. This is the file you feed
 to the synthesiser. The role leads, in upper case, so runs of one kind sort together and
 stand out from the bare timestamps of runs made without a `--role`. Within a role, the
 timestamp sorts them by time.
 
-**`.panel/<topic>/raw/<model>-<timestamp>.json`** — the raw OpenRouter payload from each
+**`.orpan/<topic>/raw/<model>-<timestamp>.json`** — the raw OpenRouter payload from each
 model, kept so the parser can be tested against real responses. The timestamp is what ties
 a payload back to its report.
 
@@ -199,7 +199,7 @@ These are choices, not gaps. Please do not "fix" them without reading this secti
 inline, in the PEP 723 block at the top. A package file would be a second place to declare
 the same thing. A packaged install is only needed on a machine that does not have this
 checkout; for one Mac with one checkout, a symlink does the whole job and an edit to
-`src/panel.py` takes effect without reinstalling. Revisit this if `orpan` ever has to run
+`src/orpan.py` takes effect without reinstalling. Revisit this if `orpan` ever has to run
 inside a sandbox, because a sandbox mounts only its own workspace and cannot see this
 repository.
 
@@ -241,7 +241,7 @@ way it goes:
 
 ```
 Prompt ──> ask() ──> Response ──┐
-Prompt ──> ask() ──> Response ──┼──> render_panel() ──> .panel/<topic>/<stamp>.md
+Prompt ──> ask() ──> Response ──┼──> render_panel() ──> .orpan/<topic>/<stamp>.md
 Prompt ──> ask() ──> Response ──┘
 ```
 
