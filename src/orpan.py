@@ -46,21 +46,23 @@ PRESETS: dict[str, tuple[str, ...]] = {
 
 SYSTEM_PROMPTS: dict[str, str] = {
     "scope": (
-        "Do not answer the question. List"
-        "(a) what you would need to know to answer it well,"
-        "(b) what kind of source would settle each point, and"
-        "(c) any specific works, papers, projects, benchmarks or documentation worth consulting."
-        "Be concrete and prioritise."
+        "Do not answer the question. List "
+        "(a) what you would need to know to answer it well, "
+        "(b) what kind of source would settle each point, and "
+        "(c) any specific works, papers, projects, benchmarks or documentation worth consulting. "
+        "Be concrete and prioritise. "
         "Don't give URLs."
     ),
     "answer": (
-        "Answer the question using the briefing as your primary evidence."
-        "Where the briefing settles a point, rely on it and say which part you are relying on."
-        "Where it does not settle a point, say so explicitly rather than filling the gap from your own knowledge"
-        "A marked gap is more useful to the reader than a confident guess."
-        "If you believe the briefing is wrong or materially incomplete, say that too."
-        "State your conclusion plainly, then your reasoning. Where you are uncertain,"
-        "say how uncertain and what evidence would change your mind."
+        "Answer the question using the briefing as your primary evidence. "
+        "Where the briefing settles a point, rely on it and say which part you are relying on. "
+        "Where it does not settle a point, say so. You may then add what you know from outside the briefing, "
+        "but mark each such claim as your own knowledge and say how confident you are. "
+        "Never present it as if it came from the briefing. "
+        "A marked gap is more useful to the reader than a confident guess. "
+        "If you believe the briefing is wrong or materially incomplete, say that too. "
+        "State your conclusion plainly, then your reasoning. Where you are uncertain, "
+        "say how uncertain and what evidence would change your mind. "
         "Do not hedge to cover both possibilities."
     ),
 }
@@ -110,6 +112,7 @@ class Prompt:
     question: str
     system: str = ""
     images: tuple[Path, ...] = ()
+    web_search: bool = False  # the model decides whether and what to search
 
     def __post_init__(self) -> None:
         for path in self.images:
@@ -292,14 +295,17 @@ def summary(answer: Response, balance: float | None = None) -> str:
 
 async def ask(client: httpx.AsyncClient, model_id: str, prompt: Prompt) -> Response:
     """Ask one model. Every outcome comes back as a Response."""
+    body = {"model": model_id, "messages": prompt.to_messages(), "usage": {"include": True}}
+    if prompt.web_search:
+        # OpenRouter runs the searches the model asks for and returns one final answer.
+        body["tools"] = [{"type": "openrouter:web_search"}]
     started = time.monotonic()
     try:
-        response = await client.post(
-            "/chat/completions",
-            json={"model": model_id, "messages": prompt.to_messages(), "usage": {"include": True}},
-        )
+        response = await client.post("/chat/completions", json=body)
     except httpx.TimeoutException:
-        return Response(model=model_id, error=f"Nothing received for {TIMEOUT:.0f}s", seconds=time.monotonic() - started)
+        return Response(
+            model=model_id, error=f"Nothing received for {TIMEOUT:.0f}s", seconds=time.monotonic() - started
+        )
     except httpx.HTTPError as exc:
         return Response(model=model_id, error=f"{type(exc).__name__}: {exc}", seconds=time.monotonic() - started)
 
@@ -383,6 +389,7 @@ async def main() -> None:
     prompt = Prompt(
         system=SYSTEM_PROMPTS.get(args.role) or args.system_prompt or "",
         question=read_question(args.topic, args.question_file),
+        web_search=args.web_search,
         images=tuple(args.image),
     )
 
@@ -426,6 +433,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     p.add_argument("--refresh", action="store_true", help="Refresh the model cache")
     p.add_argument("-i", "--image", action="append", default=[], type=Path, metavar="PATH")
+    p.add_argument("--web-search", action="store_true", help="Let each model search the web itself")
     p.add_argument("-p", "--preset", choices=sorted(PRESETS), default="cheap", help="Which panel to ask")
     p.add_argument("-q", "--question-file", type=Path, metavar="FILE", help="Question from this file instead")
     p.add_argument("--topic", required=True, metavar="NAME", help="Subject: questions/<topic>/ in, .orpan/<topic>/ out")

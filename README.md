@@ -106,12 +106,14 @@ topic and writing a perfectly good report into it.
 | `--role {answer,scope}` | Use a built-in system prompt |
 | `-s`, `--system-prompt TEXT` | Use your own system prompt instead |
 | `-i`, `--image PATH` | Attach an image. Repeat for more than one |
+| `--web-search` | Let each model search the web itself |
 | `--refresh` | Accepted but does nothing — `fetch_catalog()` is not wired in yet |
 
 `--topic` is required: every run belongs to a subject, and the subject is what makes the
 reports findable afterwards. There is no way to pass a question on the command line — a
 question you cannot edit and re-ask is not much use, and re-asking is the whole point.
-`--role` and `--system-prompt` remain mutually exclusive.
+`--role` and `--system-prompt` remain mutually exclusive. `--web-search` works with
+either of them, or alone.
 
 The two built-in roles:
 
@@ -119,6 +121,33 @@ The two built-in roles:
   would settle each point, and which specific works are worth consulting.
 - **`answer`** — answer using the supplied briefing as primary evidence, and say plainly
   where the briefing does not settle a point.
+
+### Web search
+
+Not every question needs the full scope, briefing and answer rounds. For a quick question
+where you want a wider view, let each model search the web itself:
+
+```bash
+orpan --topic apple --web-search
+```
+
+Each model decides whether to search, what to search for, and how many times. OpenRouter
+runs the searches and returns one final answer per model, so the report has the same form
+as any other. A model may answer from memory and not search at all. If you want every
+model to search, say so in the question.
+
+Models from OpenAI, Anthropic, Google and xAI use their provider's own search, at the
+provider's price. Other models use Exa, at $0.007 per search. Either way, the search
+results reach the model as input tokens, and you pay for those as well.
+
+Each model reads different pages. In a round without web search, every model has the same
+information, so a disagreement is a difference in judgment. In a web search round, a
+disagreement may only mean that the models found different sources. Check what each one
+relied on before you treat a split as a finding.
+
+The flag also works with a system prompt, for example `-s "Answer in Polish."`. With
+`--role answer` it lets evidence into the answer round from outside the briefing, so that
+round no longer tests the briefing alone.
 
 ### Choosing the panel
 
@@ -248,6 +277,41 @@ $0.0159. That is on purpose. A real time limit would cut a model off after it ha
 spent most of its money thinking, and bill you in full for nothing, which is the same
 mistake as `max_tokens` above. A connection that goes properly quiet still fails after 400
 seconds, which is the case worth failing on.
+
+**Web search uses the `openrouter:web_search` server tool, not `:online`.** OpenRouter
+has marked the `:online` suffix and the `web` plugin as deprecated. They also search only
+once, with the whole prompt as the query, so every model gets nearly the same results. On
+top of that, they add OpenRouter's own instruction message to the conversation. With the
+server tool, each model writes its own queries, and that is the point of asking several
+models. Server tools are still in beta at OpenRouter; if the API changes, the run shows the
+models as `failed` rather than going wrong silently. `openrouter:web_fetch`, which would
+let a model read a whole page and not just search excerpts, is left out until an answer
+shows that excerpts were not enough.
+
+**Not OpenRouter's Fusion.** `openrouter:fusion` asks a panel of models, with web search,
+and has an analyst model merge their answers. You get only the merged answer, so you
+cannot see what each model said, or whether it answered at all. By default it also caps
+each panelist at 16,000 output tokens, which is the `max_tokens` mistake above. Here the
+synthesis stays a separate step, done by a reader you choose.
+
+**No limit on web searches.** A model may search up to 30 times in one request, which is
+OpenRouter's default. This follows "No spending limits" above. Unlike `max_tokens`, a
+search limit would be safe: when it runs out, the model is asked to answer with what it
+has found, so it does not come back empty. If a run shows a model searching without end,
+add `max_uses` to the tool's `parameters` in `ask()`.
+
+**`--web-search` is not blocked for `--role answer`.** The combination breaks the rule
+that new evidence enters only through the briefing. It is allowed anyway. The answer runs
+come from fixed scripts, so the combination will not happen by accident. And
+`--role scope --web-search` may be useful: the models can check that the works they name
+really exist.
+
+**The report's file name does not say that web search was on.** Web search combines with
+any role, so the prefix would have to be something like `SCOPE-WEB-`. That also matches
+`SCOPE-*.md`, the pattern the briefing skill uses to find the newest scope report. Whether
+a model really searched is a fact about each model, not about the run, so it belongs in the
+report's table. That column waits until a real payload shows where OpenRouter puts the
+search count.
 
 ## How it works
 
