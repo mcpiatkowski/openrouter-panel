@@ -8,8 +8,8 @@ allowed-tools: Read, Write, Glob, Grep
 Topic: **$1** · Answer report: **$2** — when empty, the newest `ANSWER-*.md` in `.orpan/$1/`.
 
 The panel has answered. Every panelist read the same briefing and none of them saw
-another's reply, so where they diverge, the divergence is judgment — not a difference in
-what each happened to find. That is what this pipeline buys, and reading it is your job:
+another's reply, so where they diverge over the briefing, the divergence is judgment — not
+a difference in what each happened to find. That is what this pipeline buys, and reading it is your job:
 
 ```
 .orpan/$1/ANSWER-<stamp>.md  →  your analysis  →  questions/$1/synthesis.md
@@ -48,19 +48,23 @@ Where one cites a section, check that the briefing says what the citation claims
 confident citation of something the briefing does not contain is a more serious finding
 than any disagreement.
 
-**Did they respect the gaps?** The briefing's `## Not settled` is the control. A panelist
-answering one of those points with confidence is filling it from its own training, which
-is exactly what its role forbade. Name it, and read the rest of that answer with the same
-suspicion.
+**Did they mark what they brought in?** Each panelist could add knowledge from outside the
+briefing, but only marked as its own and with a confidence. Look first where the briefing's
+`## Not settled` leaves a gap. A marked claim is a lead: unchecked, however confident. An
+unmarked one — stated as fact while the briefing does not contain it — is exactly what its
+role forbade. Name it, and read the rest of that answer with the same suspicion.
 
 **Is the agreement earned?** Panelists may agree because the briefing settled the point,
-which is strong, or because they share training data, which is weak. Say which. Where you
-cannot tell, write that down too.
+which is strong, or because they share training data, which is weak. Marked claims make the
+weak kind visible: the models learned from much of the same text, so several of them
+bringing in the same outside fact is closer to one source than to several. Say which. Where
+you cannot tell, write that down too.
 
 **Where do they split?** The valuable part, and it gets the most room. Name which panelist
 took which side, say which argument is stronger and why. Do not average them into a middle
 position none of them held. Where a split traces back to something the briefing left
-unsettled, say so — that is the next round's work.
+unsettled, or to marked outside claims that contradict each other, say so — that is the
+next round's work.
 
 ## Write `questions/$1/synthesis.md`
 
@@ -78,11 +82,13 @@ Markdown, in this order:
 3. Where they agreed, briefly, each point marked earned or unearned.
 4. Where they split, at length, with your verdict on each.
 5. Anything one panelist raised alone that survives scrutiny.
-6. Anything a panelist got wrong: a misread of the briefing, a gap filled from training, a
-   claim no source supports.
+6. Anything a panelist got wrong: a misread of the briefing, an outside claim left
+   unmarked, a claim no source supports.
 7. **What the next round needs** — the concrete edits. What the owner must measure and add
-   to `question.md`; what the briefing should have covered and did not. If the honest
-   answer is that the panel has gone as far as the evidence allows, say that instead.
+   to `question.md`; what the briefing should have covered and did not, including the
+   marked outside claims your conclusion leans on — `/briefing` is where they get checked.
+   If the honest answer is that the panel has gone as far as the evidence allows, say that
+   instead.
 
 If `questions/$1/synthesis.md` already exists, say so and ask before overwriting.
 
