@@ -44,16 +44,26 @@ locations - that you ran `rehash` or opened a new terminal.
 Run from a workspace: any directory that holds a `questions/` folder. Every path is
 relative to the working directory, and nothing is read from this repository.
 
-```bash
-# put the question to the panel
-orpan --topic willow --role scope
+Your first question:
 
-# the same, with two photographs
+```bash
+mkdir -p ~/garden/questions/apple && cd ~/garden
+echo "When should I prune an apple tree: in winter or in summer?" > questions/apple/question.md
+orpan --topic apple --role scope
+```
+
+A good question for a panel is one where informed people disagree. Gardeners split on this
+one: winter pruning shapes the tree, summer pruning slows its growth. A question with one
+settled answer is cheaper to ask a single model.
+
+Attach photographs with `--image`, once per file:
+
+```bash
 orpan \
     --role scope \
-    --topic willow \
-    --image images/small/polnoc_3.jpeg \
-    --image images/small/kwiatostan_1.jpeg
+    --topic apple \
+    --image images/apple/north.jpeg \
+    --image images/apple/south.jpeg
 ```
 
 ### Workspaces
@@ -62,8 +72,8 @@ A workspace is any directory with a `questions/` folder in it. The tool is insta
 and run from whichever workspace the question belongs to:
 
 ```
-~/Notes/health/   questions/hamstring/…  images/hamstring/…  .orpan/hamstring/…
-~/Notes/garden/   questions/willow/…     images/willow/…     .orpan/willow/…
+~/garden/    questions/apple/…      images/apple/…      .orpan/apple/…
+~/kitchen/   questions/sourdough/…  images/sourdough/…  .orpan/sourdough/…
 ```
 
 Keep the questions out of this repository. This one is public, and a question can hold
@@ -77,13 +87,13 @@ A topic is the subject of a panel, and the only name you have to remember. It re
 both ends of a run, inside the workspace you are in:
 
 ```
-questions/willow/question.md   # in — the question, edited between rounds
-questions/willow/scope.sh      # the run itself, kept with its subject
-.orpan/willow/                 # out — every report and payload
+questions/apple/question.md    # in — the question, edited between rounds
+questions/apple/scope.sh       # the run itself, kept with its subject
+.orpan/apple/                  # out — every report and payload
 ```
 
 Because the question is derived rather than named, a mistyped topic fails at once with
-`No question at questions/willlow/question.md`, instead of quietly starting a second
+`No question at questions/appel/question.md`, instead of quietly starting a second
 topic and writing a perfectly good report into it.
 
 ### Options
@@ -146,7 +156,7 @@ Everything a run produces lands under `.orpan/<topic>/`, so one subject is one d
 you can read, copy or delete as a unit:
 
 ```
-.orpan/willow/
+.orpan/apple/
 ├── 20260913T090210Z.md            # no --role, no prefix
 ├── ANSWER-20260913T084023Z.md     # --role answer
 ├── SCOPE-20260913T081306Z.md      # --role scope
@@ -194,6 +204,11 @@ third again to the length of every answer.
 ## Deliberate omissions
 
 These are choices, not gaps. Please do not "fix" them without reading this section.
+
+**No example workspace in this repository.** The first question under Usage is the
+example. A folder holding only a `question.md` would show nothing those three lines do
+not. It would earn its place only with a real report in it, and a report costs money to
+make and goes stale whenever the presets change.
 
 **No `pyproject.toml`, and no `uv tool install`.** The script declares its dependencies
 inline, in the PEP 723 block at the top. A package file would be a second place to declare
