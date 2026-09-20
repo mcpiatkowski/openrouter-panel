@@ -28,7 +28,7 @@ PRESETS: dict[str, tuple[str, ...]] = {
     "cheap": (
         "google/gemini-3.8-flash",
         "openai/gpt-5.6-luna",
-        "z-ai/glm-5.3-flash",
+        # "z-ai/glm-5.3-flash",
     ),
     "balanced": (
         "anthropic/claude-sonnet-5",
@@ -89,7 +89,7 @@ PANELIST = """\
 <panelist model="{model}" status="{status}">
 
 {body}
-{reasoning}
+{sources}{reasoning}
 </panelist>"""
 
 REASONING = """
@@ -98,6 +98,14 @@ REASONING = """
 {text}
 
 </details>
+"""
+
+SOURCES = """
+<sources>
+
+{items}
+
+</sources>
 """
 
 
@@ -144,14 +152,21 @@ class Usage:
     completion_tokens: int = 0
     reasoning_tokens: int = 0
     prompt_tokens: int = 0
+    searches: int = 0
     cost: float = 0.0
 
     def __add__(self, other: "Usage") -> "Usage":
         return Usage(**{f.name: getattr(self, f.name) + getattr(other, f.name) for f in fields(self)})
 
+    @property
+    def search_cost(self) -> float:
+        """Measured: the search fee is inside `cost`, and in neither upstream part."""
+        return self.cost - self.upstream_prompt_cost - self.upstream_completion_cost
+
     @classmethod
     def from_payload(cls, usage: dict) -> "Usage":
         completion = usage.get("completion_tokens_details") or {}
+        tools = usage.get("server_tool_use_details") or {}
         costs = usage.get("cost_details") or {}
 
         return cls(
@@ -160,6 +175,7 @@ class Usage:
             reasoning_tokens=int(completion.get("reasoning_tokens") or 0),
             completion_tokens=int(usage.get("completion_tokens") or 0),
             prompt_tokens=int(usage.get("prompt_tokens") or 0),
+            searches=int(tools.get("web_search_requests") or 0),
             cost=float(usage.get("cost") or 0.0),
         )
 
@@ -172,6 +188,17 @@ def extract_reasoning(message: dict) -> str:
     blocks = message.get("reasoning_details") or []
     parts = [(b.get("text") or "").strip() for b in blocks]
     return "\n\n".join(p for p in parts if p)
+
+
+def extract_sources(message: dict) -> tuple[tuple[str, str], ...]:
+    """The pages the model cited, in order, without repeats. Most models link to none of
+    them in the answer itself, so this is the only record of what they read."""
+    pages: dict[str, str] = {}
+    for note in message.get("annotations") or []:
+        cite = note.get("url_citation") or {}
+        if url := cite.get("url"):
+            pages.setdefault(url, cite.get("title") or url)
+    return tuple((title, url) for url, title in pages.items())
 
 
 @dataclass(frozen=True)
@@ -188,6 +215,7 @@ class Response:
     provider: str = ""  # who served it, e.g. "Google"
     content: str = ""
     seconds: float = 0.0
+    sources: tuple[tuple[str, str], ...] = ()  # (title, url) for each page it cited
     raw: dict = field(default_factory=dict, repr=False, compare=False)
 
     @property
@@ -222,6 +250,7 @@ class Response:
             generation_id=payload.get("id") or "",
             content=message.get("content") or "",
             reasoning=extract_reasoning(message),
+            sources=extract_sources(message),
             seconds=seconds,
             raw=payload,
         )
@@ -279,7 +308,8 @@ def summary(answer: Response, balance: float | None = None) -> str:
     lines = [
         f"{answer.model}  via {answer.provider}  {answer.seconds:.0f}s",
         f"  tokens   {u.prompt_tokens} in / {u.completion_tokens} out ({u.reasoning_tokens} reasoning)",
-        f"  cost     ${u.cost:.4f}   prompt ${u.upstream_prompt_cost:.4f} + completion ${u.upstream_completion_cost:.4f}",
+        f"  cost     ${u.cost:.4f}   prompt ${u.upstream_prompt_cost:.4f} + completion ${u.upstream_completion_cost:.4f}"
+        + (f" + search ${u.search_cost:.4f}" if u.searches else ""),
     ]
     if not answer.usable:
         lines.append(
@@ -349,10 +379,12 @@ def render_panelist(answer: Response) -> str:
         body = answer.content
 
     show_reasoning = answer.reasoning and not answer.usable
+    items = "\n".join(f"- [{title}]({url})" for title, url in answer.sources)
     return PANELIST.format(
         model=answer.model,
         status=status(answer),
         body=body,
+        sources=SOURCES.format(items=items) if items else "",
         reasoning=REASONING.format(tokens=u.reasoning_tokens, text=answer.reasoning) if show_reasoning else "",
     )
 
@@ -360,7 +392,9 @@ def render_panelist(answer: Response) -> str:
 def render_panel(answers: list[Response], question: str, stamp: str) -> str:
     question = question.strip()
     total = sum((answer.usage for answer in answers), Usage())
-    rows = "\n".join(f"| `{a.model}` | {status(a)} | ${a.usage.cost:.4f} | {a.seconds:.0f}s |" for a in answers)
+    rows = "\n".join(
+        f"| `{a.model}` | {status(a)} | {a.usage.searches} | ${a.usage.cost:.4f} | {a.seconds:.0f}s |" for a in answers
+    )
 
     page = PANEL.format(
         title=question.splitlines()[0],
@@ -368,7 +402,7 @@ def render_panel(answers: list[Response], question: str, stamp: str) -> str:
         answered=sum(1 for answer in answers if answer.usable),
         count=len(answers),
         cost=total.cost,
-        table=f"| model | status | cost | time |\n|---|---|---|---|\n{rows}",
+        table=f"| model | status | searches | cost | time |\n|---|---|---|---|---|\n{rows}",
         question=question,
         panelists="\n\n".join(render_panelist(answer) for answer in answers),
     )

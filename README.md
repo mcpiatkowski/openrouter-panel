@@ -140,6 +140,12 @@ Models from OpenAI, Anthropic, Google and xAI use their provider's own search, a
 provider's price. Other models use Exa, at $0.007 per search. Either way, the search
 results reach the model as input tokens, and you pay for those as well.
 
+**A web search round costs several times more than the same round without it.** Measured
+on one `cheap` round of three models, one search each: $0.0406 in total, of which $0.031
+was search fees. One search cost $0.014 at Google, $0.010 at OpenAI and $0.007 at Exa.
+The tokens are the smaller part. The fee is in every model's `cost`, and the report's
+`searches` column tells you how many each model made.
+
 Each model reads different pages. In a round without web search, every model has the same
 information, so a disagreement is a difference in judgment. In a web search round, a
 disagreement may only mean that the models found different sources. Check what each one
@@ -179,6 +185,13 @@ google/gemini-3.8-flash  via Google  52s
 
 panel    2/3 answered  $0.0321
 balance  $3.85
+```
+
+After a web search the cost line carries one more part, so that the parts still add up to
+the total:
+
+```
+  cost     $0.0196   prompt $0.0000 + completion $0.0056 + search $0.0140
 ```
 
 Everything a run produces lands under `.orpan/<topic>/`, so one subject is one directory
@@ -229,6 +242,30 @@ Reasoning is included only for models that did not answer, where it is the only 
 money bought. For models that answered, the reasoning is left out on purpose: it is the
 model's working, it often contains ideas the model went on to reject, and it adds about a
 third again to the length of every answer.
+
+### After a web search
+
+The summary table has a `searches` column, one number per model. It is the count
+OpenRouter reports, not the flag you passed, so it says what each model really did. A
+model that was given the tool and searched 0 times answered from memory. Read it that
+way, and read a `0` next to a confident answer with suspicion.
+
+A model that cited pages gets a `<sources>` block after its answer, listing each page
+once, in the order it cited them:
+
+```markdown
+<sources>
+
+- [Apples and pears: winter pruning | RHS Advice](https://www.rhs.org.uk/fruit/apples/winter-pruning)
+
+</sources>
+```
+
+This block is the only record of what most models read. Measured on one round: of three
+models, only the OpenAI one put links in its answer text. The other two cited nothing in
+the text, and their sources exist only here. Gemini is the weakest of the three: it
+returns a Google redirect link and uses the bare domain as the title, so you get
+`rhs.org.uk` rather than the name of the page.
 
 ## Deliberate omissions
 
@@ -309,9 +346,22 @@ really exist.
 **The report's file name does not say that web search was on.** Web search combines with
 any role, so the prefix would have to be something like `SCOPE-WEB-`. That also matches
 `SCOPE-*.md`, the pattern the briefing skill uses to find the newest scope report. Whether
-a model really searched is a fact about each model, not about the run, so it belongs in the
-report's table. That column waits until a real payload shows where OpenRouter puts the
-search count.
+a model really searched is a fact about each model, not about the run, so it lives in the
+report's `searches` column instead. That column also says more than a file name could: a
+model can be given the tool and still search 0 times.
+
+**The `searches` column is in every report, and the `<sources>` block appears whenever a
+model cited a page.** Neither is switched on by `--web-search`. Both describe what came
+back, so a round without search simply shows zeros and no blocks. Making them appear only
+in web search rounds would mean building the table two ways, to hide a column of zeros.
+
+**`Usage.search_cost` is a subtraction, not a field OpenRouter sends.** Measured on three
+responses from three providers: the search fee sits in `usage.cost` and in neither
+upstream part, so `cost - prompt - completion` is exactly the fee. `upstream_inference_cost`
+cannot do this job: it contains the fee for native provider search but not for Exa. Note
+also that the count is at `usage.server_tool_use_details.web_search_requests`, although the
+OpenRouter documentation says `usage.server_tool_use`. No payload has used the documented
+name.
 
 ## How it works
 
