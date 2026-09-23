@@ -28,7 +28,7 @@ PRESETS: dict[str, tuple[str, ...]] = {
     "cheap": (
         "google/gemini-3.8-flash",
         "openai/gpt-5.6-luna",
-        # "z-ai/glm-5.3-flash",
+        "z-ai/glm-5.3-flash",
     ),
     "balanced": (
         "anthropic/claude-sonnet-5",
@@ -36,10 +36,8 @@ PRESETS: dict[str, tuple[str, ...]] = {
         "openai/gpt-5.6-terra",
     ),
     "quality": (
-        "anthropic/claude-opus-5",
-        "google/gemini-3.8-flash",
         "moonshotai/kimi-k3",
-        "openai/gpt-5.6-sol",
+        "openai/gpt-6-astra",
         "x-ai/grok-4.6",
     ),
 }
@@ -409,6 +407,26 @@ def render_panel(answers: list[Response], question: str, stamp: str) -> str:
     return re.sub(r"\n{3,}", "\n\n", page)
 
 
+def resolve_models(names: str) -> tuple[str, ...]:
+    """The panel, from one comma separated list of preset names and model ids.
+
+    A name with a slash is a model id; a name without one is a preset. Every OpenRouter
+    id is `vendor/model`, so the two never overlap. A mistyped preset stops the run here,
+    before any model is paid. Repeats are dropped: the same model twice would read to the
+    synthesis as two panelists agreeing.
+    """
+    models: list[str] = []
+    for name in names.split(","):
+        name = name.strip()
+        if "/" in name:
+            models.append(name)
+        elif name in PRESETS:
+            models.extend(PRESETS[name])
+        else:
+            raise SystemExit(f"Unknown preset: {name!r}. Known presets: {', '.join(PRESETS)}")
+    return tuple(dict.fromkeys(models))
+
+
 def read_question(topic: str, override: Path | None) -> str:
     """The question for a topic. A mistyped --topic stops here, before any model is paid."""
     path = override or Path("questions") / topic / "question.md"
@@ -427,8 +445,8 @@ async def main() -> None:
         images=tuple(args.image),
     )
 
-    models = PRESETS[args.preset]
-    print(f"asking {len(models)} models ({args.preset})…", file=sys.stderr)
+    models = resolve_models(args.models)
+    print(f"asking {len(models)} models: {', '.join(models)}", file=sys.stderr)
 
     async with open_client() as client:
         answers = await asyncio.gather(*(ask(client, model, prompt) for model in models))
@@ -468,7 +486,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--refresh", action="store_true", help="Refresh the model cache")
     p.add_argument("-i", "--image", action="append", default=[], type=Path, metavar="PATH")
     p.add_argument("--web-search", action="store_true", help="Let each model search the web itself")
-    p.add_argument("-p", "--preset", choices=sorted(PRESETS), default="cheap", help="Which panel to ask")
+    p.add_argument("-m", "--models", default="cheap", help=f"Panel: {'|'.join(PRESETS)} or model ids, comma separated")
     p.add_argument("-q", "--question-file", type=Path, metavar="FILE", help="Question from this file instead")
     p.add_argument("--topic", required=True, metavar="NAME", help="Subject: questions/<topic>/ in, .orpan/<topic>/ out")
     return p

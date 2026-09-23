@@ -102,7 +102,7 @@ topic and writing a perfectly good report into it.
 |---|---|
 | `--topic NAME` | **Required.** The subject: `questions/<topic>/question.md` in, `.orpan/<topic>/` out |
 | `-q`, `--question-file FILE` | Read the question from this file instead of the topic's |
-| `-p`, `--preset {cheap,balanced,quality}` | Which panel to ask. Default `cheap` |
+| `-m`, `--models LIST` | Panel to ask: preset names or model ids, comma separated. Default `cheap` |
 | `--role {answer,scope}` | Use a built-in system prompt |
 | `-s`, `--system-prompt TEXT` | Use your own system prompt instead |
 | `-i`, `--image PATH` | Attach an image. Repeat for more than one |
@@ -168,8 +168,22 @@ PRESETS: dict[str, tuple[str, ...]] = {
 ```
 
 `cheap` is the default, and it is the one to iterate a question against: a scope round
-costs a few cents, so re-asking after every edit is affordable. Move to `-p quality` once
+costs a few cents, so re-asking after every edit is affordable. Move to `-m quality` once
 the question has stopped changing — for the last scope round and for the answer.
+
+A preset is only a shorthand. `-m` takes any mixture of preset names and OpenRouter model
+ids, separated by commas:
+
+```bash
+orpan --topic apple -m quality                     # a preset
+orpan --topic apple -m cheap,x-ai/grok-4.6         # a preset plus one more model
+orpan --topic apple -m openai/gpt-5.6-sol,x-ai/grok-4.6
+orpan --topic apple -m anthropic/claude-opus-5     # one model, no panel
+```
+
+A name with a slash is a model id, a name without one is a preset. Every OpenRouter id is
+`vendor/model`, so the two kinds of name never overlap, and a mistyped preset fails before
+any model is paid. A model named twice — by a preset and again by hand — is asked once.
 
 All models are asked concurrently, so a run takes as long as the slowest one rather than
 the sum. Model IDs come from https://openrouter.ai/models.
@@ -298,6 +312,23 @@ number meant nothing. The `usage` figures reported after the call are exact, and
 
 **No spending limits.** There is no `--max-spend` and no minimum-balance check. The tool
 asks the question and waits.
+
+**One flag for the panel, not two.** An earlier draft kept `--preset` and added a separate
+`-m` for model ids, the two mutually exclusive. That is more explicit — each flag takes one
+kind of value, and argparse would check the preset names itself. It was dropped because
+mutual exclusion makes `-m cheap,x-ai/grok-4.6` impossible: to ask a preset plus one extra
+model you would have to retype the whole panel by hand and keep it in step with `PRESETS`
+by hand. Adjusting a preset by one model is the thing arbitrary model ids were added for,
+so a design that forbids it is the wrong one. The price of the single flag is the slash
+rule, and preset names checked in `resolve_models()` instead of by argparse.
+
+**A model id passed to `-m` is not checked before the run.** Only preset names are, because
+checking them needs nothing but the `PRESETS` dictionary. A wrong model id comes back as
+`status="failed"` and costs nothing itself, but the rest of the panel was billed, so a typo
+costs one re-run of everyone. Checking ids would mean calling `/models` and caching the
+answer — which is what `fetch_catalog()` and `--refresh` were written for — and a cache that
+is a day old rejects a model released yesterday, which is worse than the typo. Revisit this
+when a real run has lost money to a mistyped id.
 
 **No `max_tokens`.** Capping the output was the tool's most expensive mistake. A
 reasoning model spends its budget thinking first and answering last, so a cap that runs
