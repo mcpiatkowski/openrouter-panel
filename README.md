@@ -20,53 +20,100 @@ meaningful when none of them saw the others' work.
 export OPENROUTER_API_KEY="sk-or-v1-..."
 ```
 
-## Usage
-
-Run from the repository root. Output paths are relative to the working directory.
+## Install
 
 ```bash
-# put the question to the panel
-uv run mvp/panel.py --topic willow --role scope
-
-# the same, with two photographs
-uv run mvp/panel.py \
-    --role scope \
-    --topic willow \
-    --image images/small/polnoc_3.jpeg \
-    --image images/small/kwiatostan_1.jpeg
+./install.sh
+orpan -h
 ```
+
+The script does two things. It links `src/orpan.py` into `~/.local/bin` as `orpan`, so an
+edit to the script applies at once. It copies the two skills into `~/.claude/skills`, where
+Claude Code finds them.
+
+The skills are copied, not linked. A sandbox mounts only its own workspace directory, so a
+symlink pointing into this repository is dangling inside it. Run `./install.sh` again after
+you edit a skill, and start a new sandbox to pick the copy up.
+
+If `orpan` is not found, check three things: that `~/.local/bin` is on your `PATH`, that
+`ls -l ~/.local/bin/orpan` shows an absolute target, and - in zsh, which caches command
+locations - that you ran `rehash` or opened a new terminal.
+
+## Usage
+
+Run from a workspace: any directory that holds a `questions/` folder. Every path is
+relative to the working directory, and nothing is read from this repository.
+
+Your first question:
+
+```bash
+mkdir -p ~/garden/questions/apple && cd ~/garden
+echo "When should I prune an apple tree: in winter or in summer?" > questions/apple/question.md
+orpan --topic apple --role scope
+```
+
+A good question for a panel is one where informed people disagree. Gardeners split on this
+one: winter pruning shapes the tree, summer pruning slows its growth. A question with one
+settled answer is cheaper to ask a single model.
+
+Attach photographs with `--image`, once per file:
+
+```bash
+orpan \
+    --role scope \
+    --topic apple \
+    --image images/apple/north.jpeg \
+    --image images/apple/south.jpeg
+```
+
+### Workspaces
+
+A workspace is any directory with a `questions/` folder in it. The tool is installed once
+and run from whichever workspace the question belongs to:
+
+```
+~/garden/    questions/apple/…      images/apple/…      .orpan/apple/…
+~/kitchen/   questions/sourdough/…  images/sourdough/…  .orpan/sourdough/…
+```
+
+Keep the questions out of this repository. This one is public, and a question can hold
+anything - medical notes, private measurements, photographs. A workspace is its own git
+repository, private when its subject is private. It is also the unit a sandbox mounts, so
+one workspace is one sandbox, with its own memory and nothing from the others in it.
 
 ### Topics
 
 A topic is the subject of a panel, and the only name you have to remember. It resolves
-both ends of a run:
+both ends of a run, inside the workspace you are in:
 
 ```
-questions/willow/question.md   # in — the question, edited between rounds
-questions/willow/scope.sh      # the run itself, kept with its subject
-.panel/willow/                 # out — every report and payload
+questions/apple/question.md    # in — the question, edited between rounds
+questions/apple/scope.sh       # the run itself, kept with its subject
+.orpan/apple/                  # out — every report and payload
 ```
 
 Because the question is derived rather than named, a mistyped topic fails at once with
-`No question at questions/willlow/question.md`, instead of quietly starting a second
+`No question at questions/appel/question.md`, instead of quietly starting a second
 topic and writing a perfectly good report into it.
 
 ### Options
 
 | Option | Meaning |
 |---|---|
-| `--topic NAME` | **Required.** The subject: `questions/<topic>/question.md` in, `.panel/<topic>/` out |
+| `--topic NAME` | **Required.** The subject: `questions/<topic>/question.md` in, `.orpan/<topic>/` out |
 | `-q`, `--question-file FILE` | Read the question from this file instead of the topic's |
-| `-p`, `--preset {cheap,quality}` | Which panel to ask. Default `cheap` |
+| `-m`, `--models LIST` | Panel to ask: preset names or model ids, comma separated. Default `cheap` |
 | `--role {answer,scope}` | Use a built-in system prompt |
 | `-s`, `--system-prompt TEXT` | Use your own system prompt instead |
 | `-i`, `--image PATH` | Attach an image. Repeat for more than one |
+| `--web-search` | Let each model search the web itself |
 | `--refresh` | Accepted but does nothing — `fetch_catalog()` is not wired in yet |
 
 `--topic` is required: every run belongs to a subject, and the subject is what makes the
 reports findable afterwards. There is no way to pass a question on the command line — a
 question you cannot edit and re-ask is not much use, and re-asking is the whole point.
-`--role` and `--system-prompt` remain mutually exclusive.
+`--role` and `--system-prompt` remain mutually exclusive. `--web-search` works with
+either of them, or alone.
 
 The two built-in roles:
 
@@ -75,20 +122,68 @@ The two built-in roles:
 - **`answer`** — answer using the supplied briefing as primary evidence, and say plainly
   where the briefing does not settle a point.
 
+### Web search
+
+Not every question needs the full scope, briefing and answer rounds. For a quick question
+where you want a wider view, let each model search the web itself:
+
+```bash
+orpan --topic apple --web-search
+```
+
+Each model decides whether to search, what to search for, and how many times. OpenRouter
+runs the searches and returns one final answer per model, so the report has the same form
+as any other. A model may answer from memory and not search at all. If you want every
+model to search, say so in the question.
+
+Models from OpenAI, Anthropic, Google and xAI use their provider's own search, at the
+provider's price. Other models use Exa, at $0.007 per search. Either way, the search
+results reach the model as input tokens, and you pay for those as well.
+
+**A web search round costs several times more than the same round without it.** Measured
+on one `cheap` round of three models, one search each: $0.0406 in total, of which $0.031
+was search fees. One search cost $0.014 at Google, $0.010 at OpenAI and $0.007 at Exa.
+The tokens are the smaller part. The fee is in every model's `cost`, and the report's
+`searches` column tells you how many each model made.
+
+Each model reads different pages. In a round without web search, every model has the same
+information, so a disagreement is a difference in judgment. In a web search round, a
+disagreement may only mean that the models found different sources. Check what each one
+relied on before you treat a split as a finding.
+
+The flag also works with a system prompt, for example `-s "Answer in Polish."`. With
+`--role answer` it lets evidence into the answer round from outside the briefing, so that
+round no longer tests the briefing alone.
+
 ### Choosing the panel
 
-Two panels, in `PRESETS` near the top of `mvp/panel.py`:
+Three panels, in `PRESETS` near the top of `src/orpan.py`:
 
 ```python
 PRESETS: dict[str, tuple[str, ...]] = {
     "cheap": ("google/gemini-3.8-flash", "openai/gpt-5.6-luna", "z-ai/glm-5.3-flash"),
-    "quality": ("anthropic/claude-sonnet-5", "google/gemini-3.7-flash", …),
+    "balanced": ("anthropic/claude-sonnet-5", "google/gemini-3.8-flash", …),
+    "quality": ("anthropic/claude-opus-5", "google/gemini-3.8-flash", …),
 }
 ```
 
 `cheap` is the default, and it is the one to iterate a question against: a scope round
-costs a few cents, so re-asking after every edit is affordable. Move to `-p quality` once
+costs a few cents, so re-asking after every edit is affordable. Move to `-m quality` once
 the question has stopped changing — for the last scope round and for the answer.
+
+A preset is only a shorthand. `-m` takes any mixture of preset names and OpenRouter model
+ids, separated by commas:
+
+```bash
+orpan --topic apple -m quality                     # a preset
+orpan --topic apple -m cheap,x-ai/grok-4.6         # a preset plus one more model
+orpan --topic apple -m openai/gpt-5.6-sol,x-ai/grok-4.6
+orpan --topic apple -m anthropic/claude-opus-5     # one model, no panel
+```
+
+A name with a slash is a model id, a name without one is a preset. Every OpenRouter id is
+`vendor/model`, so the two kinds of name never overlap, and a mistyped preset fails before
+any model is paid. A model named twice — by a preset and again by hand — is asked once.
 
 All models are asked concurrently, so a run takes as long as the slowest one rather than
 the sum. Model IDs come from https://openrouter.ai/models.
@@ -106,11 +201,18 @@ panel    2/3 answered  $0.0321
 balance  $3.85
 ```
 
-Everything a run produces lands under `.panel/<topic>/`, so one subject is one directory
+After a web search the cost line carries one more part, so that the parts still add up to
+the total:
+
+```
+  cost     $0.0196   prompt $0.0000 + completion $0.0056 + search $0.0140
+```
+
+Everything a run produces lands under `.orpan/<topic>/`, so one subject is one directory
 you can read, copy or delete as a unit:
 
 ```
-.panel/willow/
+.orpan/apple/
 ├── 20260913T090210Z.md            # no --role, no prefix
 ├── ANSWER-20260913T084023Z.md     # --role answer
 ├── SCOPE-20260913T081306Z.md      # --role scope
@@ -119,12 +221,12 @@ you can read, copy or delete as a unit:
     └── moonshotai-kimi-k3-20260913T090210Z.json
 ```
 
-**`.panel/<topic>/<ROLE>-<timestamp>.md`** — the panel report. This is the file you feed
+**`.orpan/<topic>/<ROLE>-<timestamp>.md`** — the panel report. This is the file you feed
 to the synthesiser. The role leads, in upper case, so runs of one kind sort together and
 stand out from the bare timestamps of runs made without a `--role`. Within a role, the
 timestamp sorts them by time.
 
-**`.panel/<topic>/raw/<model>-<timestamp>.json`** — the raw OpenRouter payload from each
+**`.orpan/<topic>/raw/<model>-<timestamp>.json`** — the raw OpenRouter payload from each
 model, kept so the parser can be tested against real responses. The timestamp is what ties
 a payload back to its report.
 
@@ -155,9 +257,53 @@ money bought. For models that answered, the reasoning is left out on purpose: it
 model's working, it often contains ideas the model went on to reject, and it adds about a
 third again to the length of every answer.
 
+### After a web search
+
+The summary table has a `searches` column, one number per model. It is the count
+OpenRouter reports, not the flag you passed, so it says what each model really did. A
+model that was given the tool and searched 0 times answered from memory. Read it that
+way, and read a `0` next to a confident answer with suspicion.
+
+A model that cited pages gets a `<sources>` block after its answer, listing each page
+once, in the order it cited them:
+
+```markdown
+<sources>
+
+- [Apples and pears: winter pruning | RHS Advice](https://www.rhs.org.uk/fruit/apples/winter-pruning)
+
+</sources>
+```
+
+This block is the only record of what most models read. Measured on one round: of three
+models, only the OpenAI one put links in its answer text. The other two cited nothing in
+the text, and their sources exist only here. Gemini is the weakest of the three: it
+returns a Google redirect link and uses the bare domain as the title, so you get
+`rhs.org.uk` rather than the name of the page.
+
 ## Deliberate omissions
 
 These are choices, not gaps. Please do not "fix" them without reading this section.
+
+**No example workspace in this repository.** The first question under Usage is the
+example. A folder holding only a `question.md` would show nothing those three lines do
+not. It would earn its place only with a real report in it, and a report costs money to
+make and goes stale whenever the presets change.
+
+**No `pyproject.toml`, and no `uv tool install`.** The script declares its dependencies
+inline, in the PEP 723 block at the top. A package file would be a second place to declare
+the same thing. A packaged install is only needed on a machine that does not have this
+checkout; for one Mac with one checkout, a symlink does the whole job and an edit to
+`src/orpan.py` takes effect without reinstalling. Revisit this if `orpan` ever has to run
+inside a sandbox, because a sandbox mounts only its own workspace and cannot see this
+repository.
+
+**The skills are copied into `~/.claude/skills`, not linked.** Measured: the host directory
+is passed into a sandbox with its symlinks unresolved, so a link into this repository is
+dangling there — `.venv/bin/python` behaves the same way. The cost is two copies of each
+skill and the need to run `./install.sh` again after editing one. The alternative, keeping
+the skills only in `~/.claude/skills`, would leave the pipeline unversioned and separated
+from the report format it depends on.
 
 **No cost estimate before the run.** How much a model will spend on reasoning cannot be
 known before it reasons, and image tokens vary by provider. An earlier version estimated
@@ -166,6 +312,23 @@ number meant nothing. The `usage` figures reported after the call are exact, and
 
 **No spending limits.** There is no `--max-spend` and no minimum-balance check. The tool
 asks the question and waits.
+
+**One flag for the panel, not two.** An earlier draft kept `--preset` and added a separate
+`-m` for model ids, the two mutually exclusive. That is more explicit — each flag takes one
+kind of value, and argparse would check the preset names itself. It was dropped because
+mutual exclusion makes `-m cheap,x-ai/grok-4.6` impossible: to ask a preset plus one extra
+model you would have to retype the whole panel by hand and keep it in step with `PRESETS`
+by hand. Adjusting a preset by one model is the thing arbitrary model ids were added for,
+so a design that forbids it is the wrong one. The price of the single flag is the slash
+rule, and preset names checked in `resolve_models()` instead of by argparse.
+
+**A model id passed to `-m` is not checked before the run.** Only preset names are, because
+checking them needs nothing but the `PRESETS` dictionary. A wrong model id comes back as
+`status="failed"` and costs nothing itself, but the rest of the panel was billed, so a typo
+costs one re-run of everyone. Checking ids would mean calling `/models` and caching the
+answer — which is what `fetch_catalog()` and `--refresh` were written for — and a cache that
+is a day old rejects a model released yesterday, which is worse than the typo. Revisit this
+when a real run has lost money to a mistyped id.
 
 **No `max_tokens`.** Capping the output was the tool's most expensive mistake. A
 reasoning model spends its budget thinking first and answering last, so a cap that runs
@@ -183,6 +346,54 @@ spent most of its money thinking, and bill you in full for nothing, which is the
 mistake as `max_tokens` above. A connection that goes properly quiet still fails after 400
 seconds, which is the case worth failing on.
 
+**Web search uses the `openrouter:web_search` server tool, not `:online`.** OpenRouter
+has marked the `:online` suffix and the `web` plugin as deprecated. They also search only
+once, with the whole prompt as the query, so every model gets nearly the same results. On
+top of that, they add OpenRouter's own instruction message to the conversation. With the
+server tool, each model writes its own queries, and that is the point of asking several
+models. Server tools are still in beta at OpenRouter; if the API changes, the run shows the
+models as `failed` rather than going wrong silently. `openrouter:web_fetch`, which would
+let a model read a whole page and not just search excerpts, is left out until an answer
+shows that excerpts were not enough.
+
+**Not OpenRouter's Fusion.** `openrouter:fusion` asks a panel of models, with web search,
+and has an analyst model merge their answers. You get only the merged answer, so you
+cannot see what each model said, or whether it answered at all. By default it also caps
+each panelist at 16,000 output tokens, which is the `max_tokens` mistake above. Here the
+synthesis stays a separate step, done by a reader you choose.
+
+**No limit on web searches.** A model may search up to 30 times in one request, which is
+OpenRouter's default. This follows "No spending limits" above. Unlike `max_tokens`, a
+search limit would be safe: when it runs out, the model is asked to answer with what it
+has found, so it does not come back empty. If a run shows a model searching without end,
+add `max_uses` to the tool's `parameters` in `ask()`.
+
+**`--web-search` is not blocked for `--role answer`.** The combination breaks the rule
+that new evidence enters only through the briefing. It is allowed anyway. The answer runs
+come from fixed scripts, so the combination will not happen by accident. And
+`--role scope --web-search` may be useful: the models can check that the works they name
+really exist.
+
+**The report's file name does not say that web search was on.** Web search combines with
+any role, so the prefix would have to be something like `SCOPE-WEB-`. That also matches
+`SCOPE-*.md`, the pattern the briefing skill uses to find the newest scope report. Whether
+a model really searched is a fact about each model, not about the run, so it lives in the
+report's `searches` column instead. That column also says more than a file name could: a
+model can be given the tool and still search 0 times.
+
+**The `searches` column is in every report, and the `<sources>` block appears whenever a
+model cited a page.** Neither is switched on by `--web-search`. Both describe what came
+back, so a round without search simply shows zeros and no blocks. Making them appear only
+in web search rounds would mean building the table two ways, to hide a column of zeros.
+
+**`Usage.search_cost` is a subtraction, not a field OpenRouter sends.** Measured on three
+responses from three providers: the search fee sits in `usage.cost` and in neither
+upstream part, so `cost - prompt - completion` is exactly the fee. `upstream_inference_cost`
+cannot do this job: it contains the fee for native provider search but not for Exa. Note
+also that the count is at `usage.server_tool_use_details.web_search_requests`, although the
+OpenRouter documentation says `usage.server_tool_use`. No payload has used the documented
+name.
+
 ## How it works
 
 One request per model, all in flight at once, each turning into a `Response` whichever
@@ -190,7 +401,7 @@ way it goes:
 
 ```
 Prompt ──> ask() ──> Response ──┐
-Prompt ──> ask() ──> Response ──┼──> render_panel() ──> .panel/<topic>/<stamp>.md
+Prompt ──> ask() ──> Response ──┼──> render_panel() ──> .orpan/<topic>/<stamp>.md
 Prompt ──> ask() ──> Response ──┘
 ```
 

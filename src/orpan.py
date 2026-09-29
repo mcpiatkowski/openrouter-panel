@@ -36,31 +36,31 @@ PRESETS: dict[str, tuple[str, ...]] = {
         "openai/gpt-5.6-terra",
     ),
     "quality": (
-        "anthropic/claude-opus-5",
-        "google/gemini-3.8-flash",
         "moonshotai/kimi-k3",
-        "openai/gpt-5.6-sol",
+        "openai/gpt-6-astra",
         "x-ai/grok-4.6",
     ),
 }
 
 SYSTEM_PROMPTS: dict[str, str] = {
     "scope": (
-        "Do not answer the question. List"
-        "(a) what you would need to know to answer it well,"
-        "(b) what kind of source would settle each point, and"
-        "(c) any specific works, papers, projects, benchmarks or documentation worth consulting."
-        "Be concrete and prioritise."
+        "Do not answer the question. List "
+        "(a) what you would need to know to answer it well, "
+        "(b) what kind of source would settle each point, and "
+        "(c) any specific works, papers, projects, benchmarks or documentation worth consulting. "
+        "Be concrete and prioritise. "
         "Don't give URLs."
     ),
     "answer": (
-        "Answer the question using the briefing as your primary evidence."
-        "Where the briefing settles a point, rely on it and say which part you are relying on."
-        "Where it does not settle a point, say so explicitly rather than filling the gap from your own knowledge"
-        "A marked gap is more useful to the reader than a confident guess."
-        "If you believe the briefing is wrong or materially incomplete, say that too."
-        "State your conclusion plainly, then your reasoning. Where you are uncertain,"
-        "say how uncertain and what evidence would change your mind."
+        "Answer the question using the briefing as your primary evidence. "
+        "Where the briefing settles a point, rely on it and say which part you are relying on. "
+        "Where it does not settle a point, say so. You may then add what you know from outside the briefing, "
+        "but mark each such claim as your own knowledge and say how confident you are. "
+        "Never present it as if it came from the briefing. "
+        "A marked gap is more useful to the reader than a confident guess. "
+        "If you believe the briefing is wrong or materially incomplete, say that too. "
+        "State your conclusion plainly, then your reasoning. Where you are uncertain, "
+        "say how uncertain and what evidence would change your mind. "
         "Do not hedge to cover both possibilities."
     ),
 }
@@ -87,7 +87,7 @@ PANELIST = """\
 <panelist model="{model}" status="{status}">
 
 {body}
-{reasoning}
+{sources}{reasoning}
 </panelist>"""
 
 REASONING = """
@@ -96,6 +96,14 @@ REASONING = """
 {text}
 
 </details>
+"""
+
+SOURCES = """
+<sources>
+
+{items}
+
+</sources>
 """
 
 
@@ -110,6 +118,7 @@ class Prompt:
     question: str
     system: str = ""
     images: tuple[Path, ...] = ()
+    web_search: bool = False  # the model decides whether and what to search
 
     def __post_init__(self) -> None:
         for path in self.images:
@@ -141,14 +150,21 @@ class Usage:
     completion_tokens: int = 0
     reasoning_tokens: int = 0
     prompt_tokens: int = 0
+    searches: int = 0
     cost: float = 0.0
 
     def __add__(self, other: "Usage") -> "Usage":
         return Usage(**{f.name: getattr(self, f.name) + getattr(other, f.name) for f in fields(self)})
 
+    @property
+    def search_cost(self) -> float:
+        """Measured: the search fee is inside `cost`, and in neither upstream part."""
+        return self.cost - self.upstream_prompt_cost - self.upstream_completion_cost
+
     @classmethod
     def from_payload(cls, usage: dict) -> "Usage":
         completion = usage.get("completion_tokens_details") or {}
+        tools = usage.get("server_tool_use_details") or {}
         costs = usage.get("cost_details") or {}
 
         return cls(
@@ -157,6 +173,7 @@ class Usage:
             reasoning_tokens=int(completion.get("reasoning_tokens") or 0),
             completion_tokens=int(usage.get("completion_tokens") or 0),
             prompt_tokens=int(usage.get("prompt_tokens") or 0),
+            searches=int(tools.get("web_search_requests") or 0),
             cost=float(usage.get("cost") or 0.0),
         )
 
@@ -169,6 +186,17 @@ def extract_reasoning(message: dict) -> str:
     blocks = message.get("reasoning_details") or []
     parts = [(b.get("text") or "").strip() for b in blocks]
     return "\n\n".join(p for p in parts if p)
+
+
+def extract_sources(message: dict) -> tuple[tuple[str, str], ...]:
+    """The pages the model cited, in order, without repeats. Most models link to none of
+    them in the answer itself, so this is the only record of what they read."""
+    pages: dict[str, str] = {}
+    for note in message.get("annotations") or []:
+        cite = note.get("url_citation") or {}
+        if url := cite.get("url"):
+            pages.setdefault(url, cite.get("title") or url)
+    return tuple((title, url) for url, title in pages.items())
 
 
 @dataclass(frozen=True)
@@ -185,6 +213,7 @@ class Response:
     provider: str = ""  # who served it, e.g. "Google"
     content: str = ""
     seconds: float = 0.0
+    sources: tuple[tuple[str, str], ...] = ()  # (title, url) for each page it cited
     raw: dict = field(default_factory=dict, repr=False, compare=False)
 
     @property
@@ -219,6 +248,7 @@ class Response:
             generation_id=payload.get("id") or "",
             content=message.get("content") or "",
             reasoning=extract_reasoning(message),
+            sources=extract_sources(message),
             seconds=seconds,
             raw=payload,
         )
@@ -262,7 +292,7 @@ def fetch_catalog() -> dict:
 def open_client() -> httpx.AsyncClient:
     """One client for the whole panel. The key is resolved once, connections are shared."""
     return httpx.AsyncClient(
-        headers={"Authorization": f"Bearer {resolve_key()}", "X-Title": "orpan-dev"},
+        headers={"Authorization": f"Bearer {resolve_key()}", "X-Title": "orpan"},
         base_url=OR_API,
         timeout=TIMEOUT,
     )
@@ -276,7 +306,8 @@ def summary(answer: Response, balance: float | None = None) -> str:
     lines = [
         f"{answer.model}  via {answer.provider}  {answer.seconds:.0f}s",
         f"  tokens   {u.prompt_tokens} in / {u.completion_tokens} out ({u.reasoning_tokens} reasoning)",
-        f"  cost     ${u.cost:.4f}   prompt ${u.upstream_prompt_cost:.4f} + completion ${u.upstream_completion_cost:.4f}",
+        f"  cost     ${u.cost:.4f}   prompt ${u.upstream_prompt_cost:.4f} + completion ${u.upstream_completion_cost:.4f}"
+        + (f" + search ${u.search_cost:.4f}" if u.searches else ""),
     ]
     if not answer.usable:
         lines.append(
@@ -292,14 +323,17 @@ def summary(answer: Response, balance: float | None = None) -> str:
 
 async def ask(client: httpx.AsyncClient, model_id: str, prompt: Prompt) -> Response:
     """Ask one model. Every outcome comes back as a Response."""
+    body = {"model": model_id, "messages": prompt.to_messages(), "usage": {"include": True}}
+    if prompt.web_search:
+        # OpenRouter runs the searches the model asks for and returns one final answer.
+        body["tools"] = [{"type": "openrouter:web_search"}]
     started = time.monotonic()
     try:
-        response = await client.post(
-            "/chat/completions",
-            json={"model": model_id, "messages": prompt.to_messages(), "usage": {"include": True}},
-        )
+        response = await client.post("/chat/completions", json=body)
     except httpx.TimeoutException:
-        return Response(model=model_id, error=f"Nothing received for {TIMEOUT:.0f}s", seconds=time.monotonic() - started)
+        return Response(
+            model=model_id, error=f"Nothing received for {TIMEOUT:.0f}s", seconds=time.monotonic() - started
+        )
     except httpx.HTTPError as exc:
         return Response(model=model_id, error=f"{type(exc).__name__}: {exc}", seconds=time.monotonic() - started)
 
@@ -343,10 +377,12 @@ def render_panelist(answer: Response) -> str:
         body = answer.content
 
     show_reasoning = answer.reasoning and not answer.usable
+    items = "\n".join(f"- [{title}]({url})" for title, url in answer.sources)
     return PANELIST.format(
         model=answer.model,
         status=status(answer),
         body=body,
+        sources=SOURCES.format(items=items) if items else "",
         reasoning=REASONING.format(tokens=u.reasoning_tokens, text=answer.reasoning) if show_reasoning else "",
     )
 
@@ -354,7 +390,9 @@ def render_panelist(answer: Response) -> str:
 def render_panel(answers: list[Response], question: str, stamp: str) -> str:
     question = question.strip()
     total = sum((answer.usage for answer in answers), Usage())
-    rows = "\n".join(f"| `{a.model}` | {status(a)} | ${a.usage.cost:.4f} | {a.seconds:.0f}s |" for a in answers)
+    rows = "\n".join(
+        f"| `{a.model}` | {status(a)} | {a.usage.searches} | ${a.usage.cost:.4f} | {a.seconds:.0f}s |" for a in answers
+    )
 
     page = PANEL.format(
         title=question.splitlines()[0],
@@ -362,11 +400,31 @@ def render_panel(answers: list[Response], question: str, stamp: str) -> str:
         answered=sum(1 for answer in answers if answer.usable),
         count=len(answers),
         cost=total.cost,
-        table=f"| model | status | cost | time |\n|---|---|---|---|\n{rows}",
+        table=f"| model | status | searches | cost | time |\n|---|---|---|---|---|\n{rows}",
         question=question,
         panelists="\n\n".join(render_panelist(answer) for answer in answers),
     )
     return re.sub(r"\n{3,}", "\n\n", page)
+
+
+def resolve_models(names: str) -> tuple[str, ...]:
+    """The panel, from one comma separated list of preset names and model ids.
+
+    A name with a slash is a model id; a name without one is a preset. Every OpenRouter
+    id is `vendor/model`, so the two never overlap. A mistyped preset stops the run here,
+    before any model is paid. Repeats are dropped: the same model twice would read to the
+    synthesis as two panelists agreeing.
+    """
+    models: list[str] = []
+    for name in names.split(","):
+        name = name.strip()
+        if "/" in name:
+            models.append(name)
+        elif name in PRESETS:
+            models.extend(PRESETS[name])
+        else:
+            raise SystemExit(f"Unknown preset: {name!r}. Known presets: {', '.join(PRESETS)}")
+    return tuple(dict.fromkeys(models))
 
 
 def read_question(topic: str, override: Path | None) -> str:
@@ -383,11 +441,12 @@ async def main() -> None:
     prompt = Prompt(
         system=SYSTEM_PROMPTS.get(args.role) or args.system_prompt or "",
         question=read_question(args.topic, args.question_file),
+        web_search=args.web_search,
         images=tuple(args.image),
     )
 
-    models = PRESETS[args.preset]
-    print(f"asking {len(models)} models ({args.preset})…", file=sys.stderr)
+    models = resolve_models(args.models)
+    print(f"asking {len(models)} models: {', '.join(models)}", file=sys.stderr)
 
     async with open_client() as client:
         answers = await asyncio.gather(*(ask(client, model, prompt) for model in models))
@@ -403,7 +462,7 @@ async def main() -> None:
     if balance is not None:
         print(f"balance  ${balance:.2f}")
 
-    topic = Path(".panel") / args.topic
+    topic = Path(".orpan") / args.topic
     name = f"{args.role.upper()}-{stamp}" if args.role else stamp
 
     report = topic / f"{name}.md"
@@ -426,9 +485,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     p.add_argument("--refresh", action="store_true", help="Refresh the model cache")
     p.add_argument("-i", "--image", action="append", default=[], type=Path, metavar="PATH")
-    p.add_argument("-p", "--preset", choices=sorted(PRESETS), default="cheap", help="Which panel to ask")
+    p.add_argument("--web-search", action="store_true", help="Let each model search the web itself")
+    p.add_argument("-m", "--models", default="cheap", help=f"Panel: {'|'.join(PRESETS)} or model ids, comma separated")
     p.add_argument("-q", "--question-file", type=Path, metavar="FILE", help="Question from this file instead")
-    p.add_argument("--topic", required=True, metavar="NAME", help="Subject: questions/<topic>/ in, .panel/<topic>/ out")
+    p.add_argument("--topic", required=True, metavar="NAME", help="Subject: questions/<topic>/ in, .orpan/<topic>/ out")
     return p
 
 
